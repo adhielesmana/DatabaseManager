@@ -62,8 +62,8 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 ### 1. Prep secrets
 
 1. Copy `.env.example` → `.env` and `dashboard/.env.example` → `dashboard/.env` if you prefer editing offline. The default files stay in `.gitignore` and must never be committed anywhere (see Security below).
-2. The dashboard users, roles, and hashed passwords live in `dashboard/server/index.js`. Superadmin is `adhielesmana` (password hashed in the file); change the hash or add your own identity provider before exposing to production.
-3. The first run of `deploy.sh` seeds a strong `SESSION_SECRET`, generates the CA certs, and appends `https://<DOMAIN>` to `dashboard/.env` origins automatically.
+2. The dashboard roles are loaded from the private `dashboard/.env` file. Keep those credentials local to the server and rotate them there instead of committing identities into source control.
+3. The first run of `deploy.sh` seeds a strong `SESSION_SECRET`, generates private dashboard credentials in `dashboard/.env`, generates the CA certs, and appends `https://<DOMAIN>` to the allowed origins automatically.
 
 ### 2. First install (`sudo ./deploy.sh`)
 
@@ -81,7 +81,7 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 
 ## Access & Role model
 
-- Dashboard: `https://<DOMAIN>` → log in through the SPA. Superadmin (`adhielesmana`) can import/export CSVs, run queries, and manage roles. Admin and user roles limit exports/imports and the SQL console; update the roles or hashes in `dashboard/server/index.js`.
+- Dashboard: `https://<DOMAIN>` → log in through the SPA using the private credentials stored in `dashboard/.env`. Superadmin can import/export CSVs, run queries, and manage the full interface. Admin and user roles limit exports/imports and the SQL console.
 - MySQL: Remote clients must connect using the TLS CA at `certs/mysql/ca.pem` and the credentials defined in `.env` (`MYSQL_USER` / `MYSQL_PASSWORD`). The `MYSQL_PORT` might shift if the default was busy; consult `.env` for the active value.
 - Logs: `docker compose logs mysql` and `docker compose logs dashboard` show internal output. The host logs (`/var/log/nginx/error.log`) surface TLS issues.
 

@@ -1,5 +1,6 @@
 node_modules
 .env
+dashboard/.env
 *.log
 certs
 dashboard/server/node_modules

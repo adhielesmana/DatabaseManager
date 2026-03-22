@@ -109,6 +109,26 @@ PY
   head -c32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c64
 }
 
+generate_password_secret() {
+  if [ -n "$PYTHON_BIN" ] && "$PYTHON_BIN" - <<'PY'
+import secrets
+import string
+
+alphabet = string.ascii_letters + string.digits + "@#%+=_-"
+print("".join(secrets.choice(alphabet) for _ in range(24)))
+PY
+  then
+    return
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 24 | tr -dc 'A-Za-z0-9@#%+=_-' | head -c24
+    printf '\n'
+    return
+  fi
+  head -c48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9@#%+=_-' | head -c24
+  printf '\n'
+}
+
 ensure_session_secret() {
   local current
   current=$(trim "$(get_dash_env_value SESSION_SECRET)")
@@ -120,6 +140,25 @@ ensure_session_secret() {
       echo "Seeded dashboard SESSION_SECRET with a strong random value."
     fi
   fi
+}
+
+ensure_dashboard_user_value() {
+  local key=$1
+  local fallback=$2
+  local current
+  current=$(trim "$(get_dash_env_value "$key")")
+  if [ -z "$current" ] || [[ "$current" == replace-* ]]; then
+    set_dash_env_value "$key" "$fallback"
+  fi
+}
+
+ensure_dashboard_credentials() {
+  ensure_dashboard_user_value DASHBOARD_SUPERADMIN_USERNAME "superadmin"
+  ensure_dashboard_user_value DASHBOARD_SUPERADMIN_PASSWORD "$(generate_password_secret)"
+  ensure_dashboard_user_value DASHBOARD_ADMIN_USERNAME "admin"
+  ensure_dashboard_user_value DASHBOARD_ADMIN_PASSWORD "$(generate_password_secret)"
+  ensure_dashboard_user_value DASHBOARD_USER_USERNAME "user"
+  ensure_dashboard_user_value DASHBOARD_USER_PASSWORD "$(generate_password_secret)"
 }
 
 detect_package_manager() {
@@ -569,12 +608,13 @@ main() {
   ensure_env_file
   if [ ! -f "$DASH_ENV" ]; then
     cp "$DASH_ENV_EX" "$DASH_ENV"
-    echo "Created dashboard/.env from template. deploy.sh will seed SESSION_SECRET and SSL paths must be revisited."
+    echo "Created dashboard/.env from template. deploy.sh will seed private dashboard credentials and SESSION_SECRET locally."
   fi
 
   detect_package_manager
   ensure_python3
   ensure_session_secret
+  ensure_dashboard_credentials
 
   local domain
   domain=$(trim "$(get_env_value DOMAIN)")

@@ -25,7 +25,13 @@ const {
   SSL_CERT,
   SSL_KEY,
   PORT = 8443,
-  ALLOWED_ORIGINS = ''
+  ALLOWED_ORIGINS = '',
+  DASHBOARD_SUPERADMIN_USERNAME = '',
+  DASHBOARD_SUPERADMIN_PASSWORD = '',
+  DASHBOARD_ADMIN_USERNAME = '',
+  DASHBOARD_ADMIN_PASSWORD = '',
+  DASHBOARD_USER_USERNAME = '',
+  DASHBOARD_USER_PASSWORD = ''
 } = process.env;
 
 const SKIP_INTERNAL_TLS = ['1', 'true', 'yes'].includes((process.env.SKIP_INTERNAL_TLS || '').toLowerCase());
@@ -35,23 +41,45 @@ if (!SKIP_INTERNAL_TLS && (!SSL_CA || !SSL_CERT || !SSL_KEY)) {
   process.exit(1);
 }
 
-const USERS = [
-  {
-    username: 'adhielesmana',
-    passwordHash: '$2a$10$ej6qYnRMPIP8HctWxZ/jvO2uKXo8mb8.hkb46Dq8hPdH7nJYVJZ86',
-    role: 'superadmin'
-  },
-  {
-    username: 'admin',
-    passwordHash: '$2a$10$sCmH2XIbU8i6Iq3NsOZdVuNOi2xOtPgzxIRYJdkQBpqxOPrducaU.',
-    role: 'admin'
-  },
-  {
-    username: 'user',
-    passwordHash: '$2a$10$TkTnVGKxu4dctnMonvNaC.RKCsANLYRpsScv1P6e1q9qmF7NgYvkG',
-    role: 'user'
+function buildDashboardUsers() {
+  const configuredUsers = [
+    {
+      username: DASHBOARD_SUPERADMIN_USERNAME,
+      password: DASHBOARD_SUPERADMIN_PASSWORD,
+      role: 'superadmin'
+    },
+    {
+      username: DASHBOARD_ADMIN_USERNAME,
+      password: DASHBOARD_ADMIN_PASSWORD,
+      role: 'admin'
+    },
+    {
+      username: DASHBOARD_USER_USERNAME,
+      password: DASHBOARD_USER_PASSWORD,
+      role: 'user'
+    }
+  ];
+
+  for (const user of configuredUsers) {
+    if (
+      !user.username ||
+      !user.password ||
+      user.username.startsWith('replace-') ||
+      user.password.startsWith('replace-')
+    ) {
+      console.error(`Dashboard ${user.role} credentials are missing. Set them in dashboard/.env before starting the server.`);
+      process.exit(1);
+    }
   }
-];
+
+  return configuredUsers.map((user) => ({
+    username: user.username,
+    passwordHash: bcrypt.hashSync(user.password, 10),
+    role: user.role
+  }));
+}
+
+const USERS = buildDashboardUsers();
 
 const ROLE_LEVEL = {
   user: 1,
