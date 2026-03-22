@@ -131,6 +131,40 @@ install_packages() {
   fi
 }
 
+ensure_docker_runtime() {
+  if command -v docker >/dev/null 2>&1; then
+    return
+  fi
+  echo "Docker engine missing; installing via $PKG_MANAGER..."
+  if [ "$PKG_MANAGER" = "apt-get" ]; then
+    install_packages docker.io
+  elif [ "$PKG_MANAGER" = "dnf" ] || [ "$PKG_MANAGER" = "yum" ]; then
+    install_packages docker
+  else
+    echo "Unable to install Docker automatically on this platform. Install Docker manually." >&2
+    exit 1
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable docker >/dev/null 2>&1 || true
+    systemctl start docker >/dev/null 2>&1 || true
+  fi
+}
+
+ensure_docker_compose() {
+  if docker compose version >/dev/null 2>&1 || docker-compose version >/dev/null 2>&1; then
+    return
+  fi
+  echo "Docker Compose missing; installing via $PKG_MANAGER..."
+  if [ "$PKG_MANAGER" = "apt-get" ]; then
+    install_packages docker-compose-plugin
+  elif [ "$PKG_MANAGER" = "dnf" ] || [ "$PKG_MANAGER" = "yum" ]; then
+    install_packages docker-compose-plugin
+  else
+    echo "Docker Compose is not installable automatically on this platform. Please add it manually." >&2
+    exit 1
+  fi
+}
+
 port_in_use() {
   local port=$1
   if command -v ss >/dev/null 2>&1; then
@@ -294,6 +328,8 @@ main() {
     echo "No automatic package manager detected. Install nginx manually before running deploy.sh." >&2
     exit 1
   fi
+  ensure_docker_runtime
+  ensure_docker_compose
   if ! command -v nginx >/dev/null 2>&1; then
     install_packages nginx
     if command -v systemctl >/dev/null 2>&1; then
