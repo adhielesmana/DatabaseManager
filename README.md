@@ -45,7 +45,7 @@ flowchart LR
    - prompt once for `DOMAIN` (or re-use existing value and skip the prompt thereafter), set `CERT_EMAIL`, and append origins to `ALLOWED_ORIGINS`.
    - detect/ install `nginx` + `certbot` if missing, and configure a lightweight site that proxies `https://<DOMAIN>` to the dashboard.
    - run `certbot --nginx --redirect` to grab certs, set `SKIP_INTERNAL_TLS=true`, and generate the CA/certs required by the containers.
-   - inspect the base ports (`${MYSQL_PORT:-3306}` and `${DASHBOARD_PORT:-8443}`) and automatically bump them if another service is already listening, updating `.env` with the chosen values so the Compose stack and nginx proxy stay in sync.
+   - inspect the base ports (`${MYSQL_PORT:-3306}` and `${DASHBOARD_PORT:-8443}`) and automatically bump them until it finds a free port (up to 65535), updating `.env` with the chosen values so the Compose stack and nginx proxy stay in sync even on busy systems.
    - bring up the Compose stack (`docker compose up -d --build`).
 3. **Updates**: run `./intelligent-deploy.sh` (no sudo). It ensures `DOMAIN` exists and simply pulls + rebuilds the Compose services.
 

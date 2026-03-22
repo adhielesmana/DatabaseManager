@@ -151,16 +151,14 @@ port_in_use() {
 
 find_available_port() {
   local start_port=$1
-  local max_attempts=${2:-20}
+  local max_port=${2:-65535}
   local port=$start_port
-  local attempt=0
-  while [ "$attempt" -lt "$max_attempts" ]; do
+  while [ "$port" -le "$max_port" ]; do
     if ! port_in_use "$port"; then
       printf '%s' "$port"
       return 0
     fi
     port=$((port + 1))
-    attempt=$((attempt + 1))
   done
   return 1
 }
