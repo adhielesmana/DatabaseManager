@@ -150,17 +150,44 @@ ensure_docker_runtime() {
   fi
 }
 
+fallback_install_com=()
+fallback_install_compose() {
+  local compose_version="2.29.2"
+  local arch
+  arch=$(uname -m)
+  local binary
+  case "$arch" in
+    x86_64) binary="docker-compose-linux-x86_64" ;;
+    aarch64|arm64) binary="docker-compose-linux-aarch64" ;;
+    *) echo "Unsupported architecture $arch for docker-compose; install it manually." >&2
+       return 1 ;;
+  esac
+  curl -L "https://github.com/docker/compose/releases/download/v${compose_version}/${binary}" -o /usr/local/bin/docker-compose
+  chmod +x /usr/local/bin/docker-compose
+  hash -r
+}
+
 ensure_docker_compose() {
   if docker compose version >/dev/null 2>&1 || docker-compose version >/dev/null 2>&1; then
     return
   fi
   echo "Docker Compose missing; installing via $PKG_MANAGER..."
   if [ "$PKG_MANAGER" = "apt-get" ]; then
-    install_packages docker-compose-plugin
+    if apt-get install -y docker-compose-plugin >/dev/null 2>&1; then
+      hash -r
+      return
+    fi
+    echo "docker-compose-plugin unavailable via apt; falling back to GitHub binary."
+    fallback_install_compose
+    return
   elif [ "$PKG_MANAGER" = "dnf" ] || [ "$PKG_MANAGER" = "yum" ]; then
-    install_packages docker-compose-plugin
-  else
-    echo "Docker Compose is not installable automatically on this platform. Please add it manually." >&2
+    if ${PKG_MANAGER} install -y docker-compose-plugin >/dev/null 2>&1; then
+      hash -r
+      return
+    fi
+  fi
+  if ! fallback_install_compose; then
+    echo "Docker Compose could not be installed automatically. Please install docker-compose manually." >&2
     exit 1
   fi
 }
