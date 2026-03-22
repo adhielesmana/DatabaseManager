@@ -5,6 +5,8 @@ ROOT=$(cd "$(dirname "$0")" && pwd)
 ENV_FILE="$ROOT/.env"
 DASH_ENV="$ROOT/dashboard/.env"
 COMPOSE_CMD=()
+DEFAULT_SUPERADMIN_USERNAME_HASH='$2a$10$CGzDK83j4d6HeAUcy9rgSuxiDRdnoQlNgnLG0hbwmH1ZLy.dN291K'
+DEFAULT_SUPERADMIN_PASSWORD_HASH='$2a$10$SeF19O8IzJMTOfZAIufoV.OPze9.ya6Ty1jFemMXlCTM9LZmmGWG.'
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Please run deploy.sh once to create $ENV_FILE before using intelligent-deploy.sh." >&2
@@ -47,8 +49,51 @@ set_dash_env_value() {
   fi
 }
 
+clear_dash_env_value() {
+  local key=$1
+  if grep -q -E "^${key}=" "$DASH_ENV" 2>/dev/null; then
+    sed -i -E "s|^${key}=.*|${key}=|" "$DASH_ENV"
+  else
+    printf '%s=\n' "$key" >> "$DASH_ENV"
+  fi
+}
+
 generate_app_build_id() {
   date -u '+%Y%m%d%H%M%S'
+}
+
+sync_superadmin_credentials() {
+  local root_username
+  local root_password
+  local root_username_hash
+  local root_password_hash
+  root_username=$(get_env_value DASHBOARD_SUPERADMIN_USERNAME)
+  root_password=$(get_env_value DASHBOARD_SUPERADMIN_PASSWORD)
+  root_username_hash=$(get_env_value DASHBOARD_SUPERADMIN_USERNAME_HASH)
+  root_password_hash=$(get_env_value DASHBOARD_SUPERADMIN_PASSWORD_HASH)
+
+  if [ -n "$root_username" ] && [ -n "$root_password" ] &&
+    [[ ! "$root_username" == replace-* ]] && [[ ! "$root_password" == replace-* ]]; then
+    set_dash_env_value DASHBOARD_SUPERADMIN_USERNAME "$root_username"
+    set_dash_env_value DASHBOARD_SUPERADMIN_PASSWORD "$root_password"
+    clear_dash_env_value DASHBOARD_SUPERADMIN_USERNAME_HASH
+    clear_dash_env_value DASHBOARD_SUPERADMIN_PASSWORD_HASH
+    return
+  fi
+
+  if [ -n "$root_username_hash" ] && [ -n "$root_password_hash" ] &&
+    [[ ! "$root_username_hash" == replace-* ]] && [[ ! "$root_password_hash" == replace-* ]]; then
+    set_dash_env_value DASHBOARD_SUPERADMIN_USERNAME "replace-superadmin-username"
+    set_dash_env_value DASHBOARD_SUPERADMIN_PASSWORD "replace-superadmin-password"
+    set_dash_env_value DASHBOARD_SUPERADMIN_USERNAME_HASH "$root_username_hash"
+    set_dash_env_value DASHBOARD_SUPERADMIN_PASSWORD_HASH "$root_password_hash"
+    return
+  fi
+
+  set_dash_env_value DASHBOARD_SUPERADMIN_USERNAME "replace-superadmin-username"
+  set_dash_env_value DASHBOARD_SUPERADMIN_PASSWORD "replace-superadmin-password"
+  set_dash_env_value DASHBOARD_SUPERADMIN_USERNAME_HASH "$DEFAULT_SUPERADMIN_USERNAME_HASH"
+  set_dash_env_value DASHBOARD_SUPERADMIN_PASSWORD_HASH "$DEFAULT_SUPERADMIN_PASSWORD_HASH"
 }
 
 sync_private_dashboard_value() {
@@ -77,8 +122,7 @@ sync_dashboard_database_env() {
   set_dash_env_value DB_USER "$(get_env_value MYSQL_USER)"
   set_dash_env_value DB_PASSWORD "$(get_env_value MYSQL_PASSWORD)"
   set_dash_env_value DB_NAME "$(get_env_value MYSQL_DATABASE)"
-  sync_private_dashboard_value DASHBOARD_SUPERADMIN_USERNAME
-  sync_private_dashboard_value DASHBOARD_SUPERADMIN_PASSWORD
+  sync_superadmin_credentials
   sync_private_dashboard_value DASHBOARD_ADMIN_USERNAME
   sync_private_dashboard_value DASHBOARD_ADMIN_PASSWORD
   sync_private_dashboard_value DASHBOARD_USER_USERNAME

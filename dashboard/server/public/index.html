@@ -10,7 +10,7 @@
     <div class="app">
       <header>
         <h1>Secure Database Manager</h1>
-        <p>Run queries, import/export CSV, and inspect schemas over TLS.</p>
+        <p>Run queries, import SQL dumps, export CSV, and inspect schemas over TLS.</p>
       </header>
 
       <div id="message" class="message"></div>
@@ -52,10 +52,10 @@
           <div id="data-actions">
             <button id="export-table">Export CSV</button>
             <label class="import-controls">
-              <span>CSV:</span>
-              <input id="import-file" type="file" accept="text/csv" />
+              <span>SQL:</span>
+              <input id="import-file" type="file" accept=".sql,text/plain,application/sql" />
             </label>
-            <button id="import-submit">Import</button>
+            <button id="import-submit">Import SQL</button>
           </div>
           <div id="table-data"></div>
         </div>

@@ -103,9 +103,10 @@ function showDashboard() {
 
 function updateRoleControls() {
   const isAdmin = state.user && ['admin', 'superadmin'].includes(state.user.role);
+  const isSuperadmin = state.user && state.user.role === 'superadmin';
   $(selectors.exportBtn).disabled = !isAdmin;
-  $(selectors.importBtn).disabled = !isAdmin;
-  $(selectors.importInput).disabled = !isAdmin;
+  $(selectors.importBtn).disabled = !isSuperadmin;
+  $(selectors.importInput).disabled = !isSuperadmin;
 }
 
 async function refreshTables() {
@@ -267,25 +268,29 @@ async function handleExport() {
 }
 
 async function handleImport() {
-  if (!state.activeTable) {
-    showMessage('Choose a table before importing a CSV', 'error');
-    return;
-  }
   const fileInput = $(selectors.importInput);
   if (!fileInput.files.length) {
-    showMessage('Attach a CSV file first', 'error');
+    showMessage('Attach a SQL file first', 'error');
     return;
   }
   const formData = new FormData();
   formData.append('payload', fileInput.files[0]);
   try {
-    await fetch(`/api/table/${state.activeTable}/import`, {
+    const res = await fetch('/api/database/import', {
       method: 'POST',
       body: formData,
       credentials: 'include'
     });
-    showMessage('Import completed', 'info');
-    await loadTableData();
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.error || 'SQL import failed');
+    }
+    showMessage('SQL import completed', 'info');
+    await refreshTables();
+    if (state.activeTable) {
+      await loadTableData();
+    }
+    fileInput.value = '';
   } catch (error) {
     showMessage(error.message, 'error');
   }

@@ -6,7 +6,7 @@
   <tr>
     <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/MySQL.svg/128px-MySQL.svg.png" width="84" alt="MySQL"><br><strong>MySQL 8.1</strong><br><span style="color:#f29111;">TLS-only + CA / Role-based users</span></td>
     <td align="center"><img src="https://www.docker.com/wp-content/uploads/2022/03/Moby-logo.png" width="110" alt="Docker"><br><strong>Docker Compose</strong><br><span style="color:#2496ed;">Self-healing containers</span></td>
-    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/9/99/Unofficial_JavaScript_logo_2.svg" width="80" alt="Node.js"><br><strong>Node / Express</strong><br><span style="color:#6cc24a;">Dashboard + CSV tooling</span></td>
+    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/9/99/Unofficial_JavaScript_logo_2.svg" width="80" alt="Node.js"><br><strong>Node / Express</strong><br><span style="color:#6cc24a;">Dashboard + SQL import / CSV export</span></td>
     <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/c/c5/Nginx_logo.svg" width="85" alt="Nginx"><br><strong>Nginx</strong><br><span style="color:#3e8eff;">Host TLS + reverse proxy</span></td>
     <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/2/24/Certbot_logo.svg" width="140" alt="Certbot"><br><strong>Certbot</strong><br><span style="color:#ffb703;">LetsEncrypt automation</span></td>
   </tr>
@@ -81,7 +81,7 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 
 ## Access & Role model
 
-- Dashboard: `https://<DOMAIN>` → log in through the SPA using the private credentials stored in `dashboard/.env`. Superadmin can import/export CSVs, run queries, and manage the full interface. Admin and user roles limit exports/imports and the SQL console.
+- Dashboard: `https://<DOMAIN>` → log in through the SPA using the private credentials stored in `dashboard/.env`. Superadmin can import `.sql` dumps, export CSVs, run queries, and manage the full interface. Admin can export CSVs, while user stays read-only in the UI.
 - MySQL: Remote clients must connect using the TLS CA at `certs/mysql/ca.pem` and the private credentials defined in `.env` (`MYSQL_USER` / `MYSQL_PASSWORD`). The `MYSQL_PORT` might shift if the default was busy; consult `.env` for the active value.
 - Logs: `docker compose logs mysql` and `docker compose logs dashboard` show internal output. The host logs (`/var/log/nginx/error.log`) surface TLS issues.
 

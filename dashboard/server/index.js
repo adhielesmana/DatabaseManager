@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const { spawn } = require('child_process');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -29,6 +30,8 @@ const {
   ALLOWED_ORIGINS = '',
   DASHBOARD_SUPERADMIN_USERNAME = '',
   DASHBOARD_SUPERADMIN_PASSWORD = '',
+  DASHBOARD_SUPERADMIN_USERNAME_HASH = '',
+  DASHBOARD_SUPERADMIN_PASSWORD_HASH = '',
   DASHBOARD_ADMIN_USERNAME = '',
   DASHBOARD_ADMIN_PASSWORD = '',
   DASHBOARD_USER_USERNAME = '',
@@ -52,6 +55,8 @@ function buildDashboardUsers() {
     {
       username: DASHBOARD_SUPERADMIN_USERNAME,
       password: DASHBOARD_SUPERADMIN_PASSWORD,
+      usernameHash: DASHBOARD_SUPERADMIN_USERNAME_HASH,
+      passwordHash: DASHBOARD_SUPERADMIN_PASSWORD_HASH,
       role: 'superadmin'
     },
     {
@@ -68,10 +73,10 @@ function buildDashboardUsers() {
 
   for (const user of configuredUsers) {
     if (
-      !user.username ||
-      !user.password ||
-      user.username.startsWith('replace-') ||
-      user.password.startsWith('replace-')
+      ((!user.username || user.username.startsWith('replace-')) &&
+        (!user.usernameHash || user.usernameHash.startsWith('replace-'))) ||
+      ((!user.password || user.password.startsWith('replace-')) &&
+        (!user.passwordHash || user.passwordHash.startsWith('replace-')))
     ) {
       console.error(`Dashboard ${user.role} credentials are missing. Set them in dashboard/.env before starting the server.`);
       process.exit(1);
@@ -79,8 +84,15 @@ function buildDashboardUsers() {
   }
 
   return configuredUsers.map((user) => ({
-    username: user.username,
-    passwordHash: bcrypt.hashSync(user.password, 10),
+    username: user.username && !user.username.startsWith('replace-') ? user.username : '',
+    usernameHash:
+      user.usernameHash && !user.usernameHash.startsWith('replace-')
+        ? user.usernameHash
+        : bcrypt.hashSync(user.username, 10),
+    passwordHash:
+      user.passwordHash && !user.passwordHash.startsWith('replace-')
+        ? user.passwordHash
+        : bcrypt.hashSync(user.password, 10),
     role: user.role
   }));
 }
@@ -126,6 +138,45 @@ const pool = mysql.createPool({
   },
   multipleStatements: false
 });
+
+function runMysqlImport(sqlText) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      `--host=${DB_HOST}`,
+      `--port=${Number(DB_PORT)}`,
+      `--user=${DB_USER}`,
+      `--password=${DB_PASSWORD}`,
+      '--default-character-set=utf8mb4',
+      '--ssl-mode=VERIFY_CA',
+      `--ssl-ca=${SSL_CA}`,
+      DB_NAME
+    ];
+
+    const child = spawn('mysql', args, {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stderr = '';
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(stderr.trim() || `mysql exited with code ${code}`));
+    });
+
+    child.stdin.end(sqlText);
+  });
+}
 
 const app = express();
 app.set('trust proxy', 1);
@@ -179,7 +230,7 @@ app.use(
   })
 );
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
 function requireAuth(req, res, next) {
   if (!req.session.user) {
@@ -210,7 +261,12 @@ app.post('/api/login', (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required' });
   }
-  const user = USERS.find((u) => u.username === username);
+  const user = USERS.find((u) => {
+    if (u.username) {
+      return u.username === username;
+    }
+    return bcrypt.compareSync(username, u.usernameHash);
+  });
   if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
@@ -348,6 +404,29 @@ app.post('/api/table/:table/import', requireRole('admin'), upload.single('payloa
   } catch (error) {
     console.error('import', error);
     res.status(500).json({ error: 'Import failed', detail: error.message });
+  }
+});
+
+app.post('/api/database/import', requireRole('superadmin'), upload.single('payload'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'SQL file is required' });
+  }
+
+  const sqlText = req.file.buffer.toString('utf8').trim();
+  if (!sqlText) {
+    return res.status(400).json({ error: 'SQL file was empty' });
+  }
+
+  if (!/\.sql$/i.test(req.file.originalname || '')) {
+    return res.status(400).json({ error: 'Only .sql files are allowed' });
+  }
+
+  try {
+    await runMysqlImport(sqlText);
+    res.json({ imported: true });
+  } catch (error) {
+    console.error('sql-import', error);
+    res.status(500).json({ error: 'SQL import failed', detail: error.message });
   }
 });
 
