@@ -398,8 +398,9 @@ main() {
     exit 1
   fi
 
-  configure_nginx_site "$domain" "$dashboard_port" "$upstream_https"
   obtain_ssl_certificate "$domain" "$cert_email"
+
+  configure_nginx_site "$domain" "$dashboard_port" "$upstream_https"
 
   ensure_compose_command
   echo "Generating internal TLS certs for MySQL and the dashboard..."
