@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Secure Database Manager</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <h1>Secure Database Manager</h1>
+        <p>Run queries, import/export CSV, and inspect schemas over TLS.</p>
+      </header>
+
+      <div id="message" class="message"></div>
+
+      <section id="login-view" class="panel login-card">
+        <h2>Sign in</h2>
+        <form id="login-form">
+          <label>
+            Username
+            <input id="username" name="username" type="text" required autocomplete="username" />
+          </label>
+          <label>
+            Password
+            <input id="password" name="password" type="password" required autocomplete="current-password" />
+          </label>
+          <button type="submit">Sign in</button>
+        </form>
+        <p class="muted">Superadmin credentials: <strong>adhielesmana</strong> / <strong>Adhie@2026!</strong></p>
+      </section>
+
+      <section id="dashboard-view" class="hidden">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Tables</h2>
+              <p class="muted">Select any table to load its rows.</p>
+            </div>
+            <button id="refresh-tables">Refresh tables</button>
+          </div>
+          <div id="table-list"></div>
+        </div>
+
+        <div class="panel">
+          <header>
+            <div>
+              <h2>Active table:</h2>
+              <p id="active-table-name" class="muted">Pick a table to begin</p>
+            </div>
+          </header>
+          <div id="data-actions">
+            <button id="export-table">Export CSV</button>
+            <label class="import-controls">
+              <span>CSV:</span>
+              <input id="import-file" type="file" accept="text/csv" />
+            </label>
+            <button id="import-submit">Import</button>
+          </div>
+          <div id="table-data"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Custom SELECT</h2>
+          <p class="muted">Only SELECT statements are permitted; semicolons are stripped.</p>
+          <textarea id="custom-query" placeholder="SELECT * FROM my_table LIMIT 10"></textarea>
+          <button id="run-query">Run query</button>
+          <div id="query-result"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Session</h2>
+          <p>
+            Signed in as <strong id="current-user"></strong> (<span id="current-role"></span>)
+          </p>
+          <button id="logout">Sign out</button>
+        </div>
+      </section>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>

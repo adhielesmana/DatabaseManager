@@ -1,0 +1,41 @@
+version: '3.9'
+
+services:
+  mysql:
+    image: mysql:8.1
+    env_file:
+      - .env
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d:ro
+      - ./certs/mysql:/etc/mysql/ssl:ro
+    command: >
+      --require_secure_transport=ON
+      --ssl-ca=/etc/mysql/ssl/ca.pem
+      --ssl-cert=/etc/mysql/ssl/server-cert.pem
+      --ssl-key=/etc/mysql/ssl/server-key.pem
+      --caching_sha2_password_auto_generate_rsa_keys=1
+    networks:
+      - dbnet
+
+  dashboard:
+    build: ./dashboard
+    env_file:
+      - ./dashboard/.env
+    ports:
+      - "${DASHBOARD_PORT:-8443}:8443"
+    volumes:
+      - ./certs/dashboard:/app/certs:ro
+    depends_on:
+      - mysql
+    networks:
+      - dbnet
+
+volumes:
+  mysql-data:
+
+networks:
+  dbnet:
+    driver: bridge

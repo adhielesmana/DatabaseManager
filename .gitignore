@@ -1,0 +1,7 @@
+node_modules
+.env
+*.log
+certs
+dashboard/server/node_modules
+.dashboard.env
+.DS_Store
