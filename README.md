@@ -1,10 +1,16 @@
-![MySQL](https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/MySQL_logo.svg/160px-MySQL_logo.svg.png) ![Docker](https://www.docker.com/wp-content/uploads/2022/03/Moby-logo.png) ![Node.js](https://upload.wikimedia.org/wikipedia/commons/d/d9/Node.js_logo.svg)
+<table>
+  <tr>
+    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/MySQL_logo.svg/160px-MySQL_logo.svg.png" width="80" alt="MySQL logo"><br>MySQL 8.1</td>
+    <td align="center"><img src="https://www.docker.com/wp-content/uploads/2022/03/Moby-logo.png" width="100" alt="Docker"><br>Docker Compose</td>
+    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/d/d9/Node.js_logo.svg" width="110" alt="Node.js"><br>Node.js Dashboard</td>
+  </tr>
+</table>
 
 # DatabaseManager Stack
 
-<span style="color:#0d6efd">Secure</span> · <span style="color:#198754">TLS-first</span> · <span style="color:#d63384">role-aware</span>
+**Secure** · **TLS-first** · **Role-enabled**
 
-Deliver a hardened MySQL server behind TLS plus a management dashboard that lets your team read schemas, run scoped `SELECT` queries, and ingest/export CSVs. Everything ships as Docker Compose services, and `deploy.sh` automates nginx/certbot/nginx, certificates, and stack launch while `intelligent-deploy.sh` catches updates.
+Deliver a hardened MySQL server behind TLS plus a management dashboard that lets your team read schemas, run scoped `SELECT` queries, and ingest/export CSVs. Everything ships as Docker Compose services, with `deploy.sh` automating nginx/certbot, certificates, and stack launch while `intelligent-deploy.sh` handles updates.
 
 ## Why this stack?
 
@@ -20,20 +26,20 @@ Deliver a hardened MySQL server behind TLS plus a management dashboard that lets
 ```mermaid
 flowchart LR
   subgraph Host
-    nginx[Nginx (TLS + reverse proxy)]
-    certbot[Certbot/Let’s Encrypt]
-    docker[Docker Engine]
+    nginx["Nginx\n(TLS + reverse proxy)"]
+    certbot["Certbot/\nLet’s Encrypt"]
+    docker["Docker\nEngine"]
   end
   subgraph Containers
-    mysql[MySQL 8.1 with leaked CA]
-    dashboard[Node.js Dashboard]
+    mysql["MySQL 8.1\nw/ CA"]
+    dashboard["Node.js\nDashboard"]
   end
   nginx -->|proxy| dashboard
   dashboard -->|SSL| mysql
   docker --> mysql
   docker --> dashboard
   certbot --> nginx
-  mysql --bind SSL--> clients([Remote clients over TLS])
+  mysql --bind SSL--> clients(["Remote clients\nover TLS"])
 ```
 
 > Colors: nginx (blue), dashboard (green), MySQL (orange). The dashboard still generates internal certs (for `SKIP_INTERNAL_TLS=false`), even when nginx terminates TLS.
