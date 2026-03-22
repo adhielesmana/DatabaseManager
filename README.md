@@ -63,7 +63,7 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 
 1. Copy `.env.example` → `.env` and `dashboard/.env.example` → `dashboard/.env` if you prefer editing offline. The default files stay in `.gitignore` and must never be committed anywhere (see Security below).
 2. The dashboard roles are loaded from the private `dashboard/.env` file. Keep those credentials local to the server and rotate them there instead of committing identities into source control.
-3. The first run of `deploy.sh` seeds a strong `SESSION_SECRET`, generates private dashboard credentials in `dashboard/.env`, generates the CA certs, and appends `https://<DOMAIN>` to the allowed origins automatically.
+3. The first run of `deploy.sh` seeds strong MySQL secrets in `.env`, syncs the dashboard database settings into `dashboard/.env`, generates private dashboard credentials, stamps a fresh build id so browsers flush stale dashboard assets, generates the CA certs, and appends `https://<DOMAIN>` to the allowed origins automatically.
 
 ### 2. First install (`sudo ./deploy.sh`)
 
@@ -76,19 +76,19 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 ### 3. Updates (`./intelligent-deploy.sh`)
 
 - Run without sudo.
-- It verifies `DOMAIN` is populated, pulls image updates, rebuilds the services, and restarts the stack via `docker compose up -d --build`.
+- It verifies `DOMAIN` is populated, stamps a fresh dashboard build id to force browsers onto the latest assets, pulls image updates, rebuilds the services, and restarts the stack via `docker compose up -d --build`.
 - This script assumes the host services (nginx, certbot, Docker) already exist.
 
 ## Access & Role model
 
 - Dashboard: `https://<DOMAIN>` → log in through the SPA using the private credentials stored in `dashboard/.env`. Superadmin can import/export CSVs, run queries, and manage the full interface. Admin and user roles limit exports/imports and the SQL console.
-- MySQL: Remote clients must connect using the TLS CA at `certs/mysql/ca.pem` and the credentials defined in `.env` (`MYSQL_USER` / `MYSQL_PASSWORD`). The `MYSQL_PORT` might shift if the default was busy; consult `.env` for the active value.
+- MySQL: Remote clients must connect using the TLS CA at `certs/mysql/ca.pem` and the private credentials defined in `.env` (`MYSQL_USER` / `MYSQL_PASSWORD`). The `MYSQL_PORT` might shift if the default was busy; consult `.env` for the active value.
 - Logs: `docker compose logs mysql` and `docker compose logs dashboard` show internal output. The host logs (`/var/log/nginx/error.log`) surface TLS issues.
 
 ## Security & secrets
 
-- **Never share `.env`, `dashboard/.env`, or the `certs/` directory on GitHub or any public storage.** Those files are excluded by `.gitignore` for a reason.
-- Session cookies are `secure`, `httpOnly`, and `sameSite=none`. The script auto-generates a strong `SESSION_SECRET` when the dashboard env file is created or left with the placeholder value.
+- **Never share `.env`, `dashboard/.env`, or the `certs/` directory on GitHub or any public storage.** Those files hold the generated MySQL and dashboard secrets and are excluded by `.gitignore` for a reason.
+- Session cookies are `secure`, `httpOnly`, and `sameSite=lax`. The scripts auto-generate a strong `SESSION_SECRET`, version the dashboard assets on each deploy/update, and instruct browsers not to reuse stale cache entries.
 - MySQL runs with `require_secure_transport=ON` and uses the CA in `certs/mysql`. Rotate certificates with `scripts/generate-certs.sh` and restart the stack.
 - The dashboard enforces the `ALLOWED_ORIGINS` list and rejects unknown websites; every new domain is appended automatically from `deploy.sh`.
 

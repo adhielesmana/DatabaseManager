@@ -129,6 +129,49 @@ PY
   printf '\n'
 }
 
+generate_app_build_id() {
+  date -u '+%Y%m%d%H%M%S'
+}
+
+secret_sha256() {
+  local value=${1:-}
+  if [ -n "$PYTHON_BIN" ]; then
+    "$PYTHON_BIN" - "$value" <<'PY'
+import hashlib
+import sys
+
+print(hashlib.sha256(sys.argv[1].encode()).hexdigest())
+PY
+    return
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    printf '%s' "$value" | openssl dgst -sha256 -r | awk '{print $1}'
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$value" | shasum -a 256 | awk '{print $1}'
+    return
+  fi
+  return 1
+}
+
+is_placeholder_secret() {
+  local value=${1:-}
+  local value_hash=""
+  case "$value" in
+    ""|replace-*)
+      return 0
+      ;;
+  esac
+  value_hash=$(secret_sha256 "$value" 2>/dev/null || true)
+  case "$value_hash" in
+    a9c464c5c6db80df65e45846348ee982b2e6ac59d025383e5f1311211ef4cecb|69a0ef9a072fefc215d2037bff59c05151772ba7229b603623e72eeb0535885d|577b4f114c8df68245336a44e37f9cab29924eb066282e22991fad2a23ddf70c)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 ensure_session_secret() {
   local current
   current=$(trim "$(get_dash_env_value SESSION_SECRET)")
@@ -159,6 +202,44 @@ ensure_dashboard_credentials() {
   ensure_dashboard_user_value DASHBOARD_ADMIN_PASSWORD "$(generate_password_secret)"
   ensure_dashboard_user_value DASHBOARD_USER_USERNAME "user"
   ensure_dashboard_user_value DASHBOARD_USER_PASSWORD "$(generate_password_secret)"
+}
+
+ensure_mysql_secret() {
+  local key=$1
+  local fallback=$2
+  local current
+  current=$(trim "$(get_env_value "$key")")
+  if is_placeholder_secret "$current"; then
+    set_env_value "$key" "$fallback"
+  fi
+}
+
+ensure_mysql_value() {
+  local key=$1
+  local fallback=$2
+  local current
+  current=$(trim "$(get_env_value "$key")")
+  if [ -z "$current" ] || [[ "$current" == replace-* ]]; then
+    set_env_value "$key" "$fallback"
+  fi
+}
+
+sync_dashboard_database_env() {
+  set_dash_env_value DB_HOST "mysql"
+  set_dash_env_value DB_PORT "3306"
+  set_dash_env_value DB_USER "$(trim "$(get_env_value MYSQL_USER)")"
+  set_dash_env_value DB_PASSWORD "$(trim "$(get_env_value MYSQL_PASSWORD)")"
+  set_dash_env_value DB_NAME "$(trim "$(get_env_value MYSQL_DATABASE)")"
+}
+
+ensure_mysql_credentials() {
+  ensure_mysql_value MYSQL_DATABASE "dbmanager"
+  ensure_mysql_value MYSQL_USER "db_admin"
+  ensure_mysql_value MYSQL_READ_USER "db_read"
+  ensure_mysql_secret MYSQL_ROOT_PASSWORD "$(generate_password_secret)"
+  ensure_mysql_secret MYSQL_PASSWORD "$(generate_password_secret)"
+  ensure_mysql_secret MYSQL_READ_PASSWORD "$(generate_password_secret)"
+  sync_dashboard_database_env
 }
 
 detect_package_manager() {
@@ -613,8 +694,10 @@ main() {
 
   detect_package_manager
   ensure_python3
+  ensure_mysql_credentials
   ensure_session_secret
   ensure_dashboard_credentials
+  set_dash_env_value APP_BUILD_ID "$(generate_app_build_id)"
 
   local domain
   domain=$(trim "$(get_env_value DOMAIN)")
@@ -734,7 +817,7 @@ main() {
   ensure_nginx_site "$domain" "$dashboard_port" "$upstream_https" "final"
   verify_https_proxy "$domain"
 
-  echo "Deployment complete. Dashboard should be available over HTTPS at https://$domain." 
+  echo "Deployment complete. Dashboard should be available over HTTPS at https://$domain."
   echo "Make sure the firewall allows ports 80 and 443 and keep $ENV_FILE and dashboard/.env out of source control."
 }
 

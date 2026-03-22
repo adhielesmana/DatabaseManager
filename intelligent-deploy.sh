@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")" && pwd)
 ENV_FILE="$ROOT/.env"
+DASH_ENV="$ROOT/dashboard/.env"
 COMPOSE_CMD=()
 
 if [ ! -f "$ENV_FILE" ]; then
@@ -12,6 +13,11 @@ fi
 
 get_domain() {
   grep -m1 -E '^DOMAIN=' "$ENV_FILE" | cut -d'=' -f2-
+}
+
+get_env_value() {
+  local key=$1
+  grep -m1 -E "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-
 }
 
 detect_compose_command() {
@@ -25,6 +31,29 @@ detect_compose_command() {
   fi
 }
 
+set_dash_env_value() {
+  local key=$1
+  local value=$2
+  local escaped=${value//&/\\&}
+  if grep -q -E "^${key}=" "$DASH_ENV" 2>/dev/null; then
+    sed -i -E "s|^${key}=.*|${key}=${escaped}|" "$DASH_ENV"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$DASH_ENV"
+  fi
+}
+
+generate_app_build_id() {
+  date -u '+%Y%m%d%H%M%S'
+}
+
+sync_dashboard_database_env() {
+  set_dash_env_value DB_HOST "mysql"
+  set_dash_env_value DB_PORT "3306"
+  set_dash_env_value DB_USER "$(get_env_value MYSQL_USER)"
+  set_dash_env_value DB_PASSWORD "$(get_env_value MYSQL_PASSWORD)"
+  set_dash_env_value DB_NAME "$(get_env_value MYSQL_DATABASE)"
+}
+
 main() {
   local domain
   domain=$(get_domain)
@@ -32,8 +61,14 @@ main() {
     echo "DOMAIN is missing from $ENV_FILE. Please set it manually or re-run deploy.sh." >&2
     exit 1
   fi
+  if [ ! -f "$DASH_ENV" ]; then
+    echo "Please run deploy.sh once to create $DASH_ENV before using intelligent-deploy.sh." >&2
+    exit 1
+  fi
 
   detect_compose_command
+  sync_dashboard_database_env
+  set_dash_env_value APP_BUILD_ID "$(generate_app_build_id)"
   echo "Pulling container updates..."
   (cd "$ROOT" && "${COMPOSE_CMD[@]}" pull --parallel)
   echo "Rebuilding and restarting the stack..."

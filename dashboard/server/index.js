@@ -18,13 +18,14 @@ const {
   DB_HOST = 'mysql',
   DB_PORT = 3306,
   DB_USER = 'db_admin',
-  DB_PASSWORD = 'Adm1n@DB2026!',
+  DB_PASSWORD = '',
   DB_NAME = 'dbmanager',
   SESSION_SECRET = 'change-this-secret',
   SSL_CA,
   SSL_CERT,
   SSL_KEY,
   PORT = 8443,
+  APP_BUILD_ID = 'dev',
   ALLOWED_ORIGINS = '',
   DASHBOARD_SUPERADMIN_USERNAME = '',
   DASHBOARD_SUPERADMIN_PASSWORD = '',
@@ -38,6 +39,11 @@ const SKIP_INTERNAL_TLS = ['1', 'true', 'yes'].includes((process.env.SKIP_INTERN
 
 if (!SKIP_INTERNAL_TLS && (!SSL_CA || !SSL_CERT || !SSL_KEY)) {
   console.error('Dashboard TLS certificates are missing. Set SSL_CA, SSL_CERT, and SSL_KEY or enable SKIP_INTERNAL_TLS.');
+  process.exit(1);
+}
+
+if (!DB_PASSWORD || DB_PASSWORD.startsWith('replace-')) {
+  console.error('Dashboard database credentials are missing. Set DB_PASSWORD in dashboard/.env before starting the server.');
   process.exit(1);
 }
 
@@ -80,6 +86,10 @@ function buildDashboardUsers() {
 }
 
 const USERS = buildDashboardUsers();
+const staticRoot = path.join(__dirname, 'public');
+const indexTemplate = fs.readFileSync(path.join(staticRoot, 'index.html'), 'utf8');
+const renderedIndex = indexTemplate.replace(/__APP_BUILD_ID__/g, APP_BUILD_ID);
+const SESSION_COOKIE_NAME = 'dbmanager.sid';
 
 const ROLE_LEVEL = {
   user: 1,
@@ -119,24 +129,55 @@ const pool = mysql.createPool({
 
 const app = express();
 app.set('trust proxy', 1);
+app.disable('etag');
 app.use(cors(corsOptions));
 app.use(helmet({ contentSecurityPolicy: false }));
+app.use((req, res, next) => {
+  res.set('X-App-Build', APP_BUILD_ID);
+  res.clearCookie('connect.sid', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none'
+  });
+  if (req.path === '/' || req.path.endsWith('.html') || req.path.startsWith('/api/')) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    if (req.path === '/' || req.path.endsWith('.html')) {
+      res.set('Clear-Site-Data', '"cache"');
+    }
+  }
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
 app.use(
   session({
+    name: SESSION_COOKIE_NAME,
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
       secure: true,
-      sameSite: 'none',
+      sameSite: 'lax',
       maxAge: 1000 * 60 * 60
     }
   })
 );
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(
+  express.static(staticRoot, {
+    index: false,
+    etag: false,
+    lastModified: false,
+    maxAge: 0,
+    setHeaders(res) {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.set('Pragma', 'no-cache');
+      res.set('Expires', '0');
+    }
+  })
+);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
@@ -315,7 +356,7 @@ app.get('/api/status', (req, res) => {
 });
 
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.type('html').send(renderedIndex);
 });
 
 if (SKIP_INTERNAL_TLS) {
