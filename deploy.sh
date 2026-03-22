@@ -227,6 +227,7 @@ find_available_port() {
 configure_nginx_site() {
   local domain=$1
   local dashboard_port=${2:-8443}
+  local use_https=${3:-true}
   local sites_available="/etc/nginx/sites-available"
   local sites_enabled="/etc/nginx/sites-enabled"
   local symlink=false
@@ -238,6 +239,14 @@ configure_nginx_site() {
 
   mkdir -p "$sites_available" "$sites_enabled"
   local conf_path="$sites_available/database-manager.conf"
+  local proxy_pass_line
+  local proxy_ssl_line=""
+  if [ "$use_https" = "true" ]; then
+    proxy_pass_line="    proxy_pass https://127.0.0.1:${dashboard_port};"
+    proxy_ssl_line="    proxy_ssl_verify off;"
+  else
+    proxy_pass_line="    proxy_pass http://127.0.0.1:${dashboard_port};"
+  fi
   cat <<NGINX > "$conf_path"
 server {
   listen 80;
@@ -252,8 +261,8 @@ server {
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
-    proxy_pass https://127.0.0.1:${dashboard_port};
-    proxy_ssl_verify off;
+${proxy_pass_line}
+${proxy_ssl_line}
   }
 }
 NGINX
@@ -313,6 +322,15 @@ main() {
 
   append_allowed_origin "$domain"
   set_dash_env_value SKIP_INTERNAL_TLS true
+
+  local skip_tls
+  skip_tls=$(trim "$(get_dash_env_value SKIP_INTERNAL_TLS)")
+  local upstream_https
+  if [ "$skip_tls" = "true" ]; then
+    upstream_https=false
+  else
+    upstream_https=true
+  fi
 
   local session_secret
   session_secret=$(trim "$(get_dash_env_value SESSION_SECRET)")
@@ -380,7 +398,7 @@ main() {
     exit 1
   fi
 
-  configure_nginx_site "$domain" "$dashboard_port"
+  configure_nginx_site "$domain" "$dashboard_port" "$upstream_https"
   obtain_ssl_certificate "$domain" "$cert_email"
 
   ensure_compose_command
