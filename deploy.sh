@@ -134,7 +134,7 @@ install_packages() {
 port_in_use() {
   local port=$1
   if command -v ss >/dev/null 2>&1; then
-    if ss -ltn "( sport = :$port )" >/dev/null 2>&1; then
+    if ss -ltn | awk '{print $4}' | grep -E ":$port\$" >/dev/null 2>&1; then
       return 0
     fi
   elif command -v netstat >/dev/null 2>&1; then
