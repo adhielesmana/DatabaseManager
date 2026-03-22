@@ -20,6 +20,11 @@ get_env_value() {
   grep -m1 -E "^${key}=" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2-
 }
 
+get_dash_env_value() {
+  local key=$1
+  grep -m1 -E "^${key}=" "$DASH_ENV" 2>/dev/null | cut -d'=' -f2-
+}
+
 detect_compose_command() {
   if docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD=("docker" "compose")
@@ -46,12 +51,38 @@ generate_app_build_id() {
   date -u '+%Y%m%d%H%M%S'
 }
 
+sync_private_dashboard_value() {
+  local key=$1
+  local root_value
+  local dash_value
+  root_value=$(get_env_value "$key")
+  dash_value=$(get_dash_env_value "$key")
+
+  if [ -n "$root_value" ] && [[ ! "$root_value" == replace-* ]]; then
+    set_dash_env_value "$key" "$root_value"
+    return
+  fi
+
+  if [ -n "$dash_value" ] && [[ ! "$dash_value" == replace-* ]]; then
+    return
+  fi
+
+  echo "Missing private value for $key. Set it in $ENV_FILE or $DASH_ENV before running intelligent-deploy.sh." >&2
+  exit 1
+}
+
 sync_dashboard_database_env() {
   set_dash_env_value DB_HOST "mysql"
   set_dash_env_value DB_PORT "3306"
   set_dash_env_value DB_USER "$(get_env_value MYSQL_USER)"
   set_dash_env_value DB_PASSWORD "$(get_env_value MYSQL_PASSWORD)"
   set_dash_env_value DB_NAME "$(get_env_value MYSQL_DATABASE)"
+  sync_private_dashboard_value DASHBOARD_SUPERADMIN_USERNAME
+  sync_private_dashboard_value DASHBOARD_SUPERADMIN_PASSWORD
+  sync_private_dashboard_value DASHBOARD_ADMIN_USERNAME
+  sync_private_dashboard_value DASHBOARD_ADMIN_PASSWORD
+  sync_private_dashboard_value DASHBOARD_USER_USERNAME
+  sync_private_dashboard_value DASHBOARD_USER_PASSWORD
 }
 
 main() {

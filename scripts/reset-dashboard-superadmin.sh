@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+ENV_FILE="$ROOT/.env"
 DASH_ENV="$ROOT/dashboard/.env"
 COMPOSE_CMD=()
 
@@ -20,6 +21,17 @@ set_dash_env_value() {
 get_dash_env_value() {
   local key=$1
   grep -m1 -E "^${key}=" "$DASH_ENV" 2>/dev/null | cut -d'=' -f2-
+}
+
+set_env_value() {
+  local key=$1
+  local value=$2
+  local escaped=${value//&/\\&}
+  if grep -q -E "^${key}=" "$ENV_FILE" 2>/dev/null; then
+    sed -i -E "s|^${key}=.*|${key}=${escaped}|" "$ENV_FILE"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  fi
 }
 
 generate_password_secret() {
@@ -78,6 +90,10 @@ main() {
   set_dash_env_value DASHBOARD_SUPERADMIN_USERNAME "$username"
   set_dash_env_value DASHBOARD_SUPERADMIN_PASSWORD "$password"
   set_dash_env_value APP_BUILD_ID "$(generate_app_build_id)"
+  if [ -f "$ENV_FILE" ]; then
+    set_env_value DASHBOARD_SUPERADMIN_USERNAME "$username"
+    set_env_value DASHBOARD_SUPERADMIN_PASSWORD "$password"
+  fi
 
   detect_compose_command
   (cd "$ROOT" && "${COMPOSE_CMD[@]}" -f docker-compose.yml up -d --build dashboard)

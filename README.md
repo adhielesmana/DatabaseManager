@@ -62,7 +62,7 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 ### 1. Prep secrets
 
 1. Copy `.env.example` → `.env` and `dashboard/.env.example` → `dashboard/.env` if you prefer editing offline. The default files stay in `.gitignore` and must never be committed anywhere (see Security below).
-2. The dashboard roles are loaded from the private `dashboard/.env` file. Keep those credentials local to the server and rotate them there instead of committing identities into source control.
+2. The dashboard roles are loaded from private env files only. If you want a fixed superadmin login, set the `DASHBOARD_*` values in the root `.env`; `deploy.sh` will mirror them into `dashboard/.env` without exposing them in Git.
 3. The first run of `deploy.sh` seeds strong MySQL secrets in `.env`, syncs the dashboard database settings into `dashboard/.env`, generates private dashboard credentials, stamps a fresh build id so browsers flush stale dashboard assets, generates the CA certs, and appends `https://<DOMAIN>` to the allowed origins automatically.
 
 ### 2. First install (`sudo ./deploy.sh`)
@@ -99,7 +99,7 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 - **Firewalls**: Keep the host firewall allowing nginx traffic; the dashboard endpoint and certbot challenges rely on being reachable on port 80/443.
 - **Nginx errors**: Check `/var/log/nginx/error.log` for upstream TLS or proxy issues. The `deploy.sh` output tells you if the nginx config test fails.
 - **Port conflicts**: `deploy.sh` detects busy ports and bumps both the MySQL and dashboard bindings until it finds a free slot, but it keeps the current ports when they are already owned by this project’s running containers.
-- **Superadmin reset**: If you lose the private login, run `./scripts/reset-dashboard-superadmin.sh [username] [password]` on the server. If you omit the password, the script generates a new one, writes it only to `dashboard/.env`, bumps the build id, and rebuilds the dashboard container.
+- **Superadmin reset**: If you lose the private login, run `./scripts/reset-dashboard-superadmin.sh [username] [password]` on the server. If you omit the password, the script generates a new one, writes it to the private env files, bumps the build id, and rebuilds the dashboard container.
 
 ## Next steps
 

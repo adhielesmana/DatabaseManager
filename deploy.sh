@@ -195,13 +195,35 @@ ensure_dashboard_user_value() {
   fi
 }
 
+ensure_private_dashboard_value() {
+  local key=$1
+  local fallback=$2
+  local root_value
+  local dash_value
+  root_value=$(trim "$(get_env_value "$key")")
+  dash_value=$(trim "$(get_dash_env_value "$key")")
+
+  if [ -n "$root_value" ] && [[ ! "$root_value" == replace-* ]]; then
+    set_dash_env_value "$key" "$root_value"
+    return
+  fi
+
+  if [ -n "$dash_value" ] && [[ ! "$dash_value" == replace-* ]]; then
+    set_env_value "$key" "$dash_value"
+    return
+  fi
+
+  set_env_value "$key" "$fallback"
+  set_dash_env_value "$key" "$fallback"
+}
+
 ensure_dashboard_credentials() {
-  ensure_dashboard_user_value DASHBOARD_SUPERADMIN_USERNAME "superadmin"
-  ensure_dashboard_user_value DASHBOARD_SUPERADMIN_PASSWORD "$(generate_password_secret)"
-  ensure_dashboard_user_value DASHBOARD_ADMIN_USERNAME "admin"
-  ensure_dashboard_user_value DASHBOARD_ADMIN_PASSWORD "$(generate_password_secret)"
-  ensure_dashboard_user_value DASHBOARD_USER_USERNAME "user"
-  ensure_dashboard_user_value DASHBOARD_USER_PASSWORD "$(generate_password_secret)"
+  ensure_private_dashboard_value DASHBOARD_SUPERADMIN_USERNAME "superadmin"
+  ensure_private_dashboard_value DASHBOARD_SUPERADMIN_PASSWORD "$(generate_password_secret)"
+  ensure_private_dashboard_value DASHBOARD_ADMIN_USERNAME "admin"
+  ensure_private_dashboard_value DASHBOARD_ADMIN_PASSWORD "$(generate_password_secret)"
+  ensure_private_dashboard_value DASHBOARD_USER_USERNAME "user"
+  ensure_private_dashboard_value DASHBOARD_USER_PASSWORD "$(generate_password_secret)"
 }
 
 ensure_mysql_secret() {
