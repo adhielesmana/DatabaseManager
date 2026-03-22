@@ -131,8 +131,43 @@ install_packages() {
   fi
 }
 
+port_in_use() {
+  local port=$1
+  if command -v ss >/dev/null 2>&1; then
+    if ss -ltn "( sport = :$port )" >/dev/null 2>&1; then
+      return 0
+    fi
+  elif command -v netstat >/dev/null 2>&1; then
+    if netstat -tln | awk '{print $4}' | grep -E ":$port\$" >/dev/null 2>&1; then
+      return 0
+    fi
+  elif command -v lsof >/dev/null 2>&1; then
+    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+find_available_port() {
+  local start_port=$1
+  local max_attempts=${2:-20}
+  local port=$start_port
+  local attempt=0
+  while [ "$attempt" -lt "$max_attempts" ]; do
+    if ! port_in_use "$port"; then
+      printf '%s' "$port"
+      return 0
+    fi
+    port=$((port + 1))
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+
 configure_nginx_site() {
   local domain=$1
+  local dashboard_port=${2:-8443}
   local sites_available="/etc/nginx/sites-available"
   local sites_enabled="/etc/nginx/sites-enabled"
   local symlink=false
@@ -158,7 +193,7 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_pass https://127.0.0.1:8443;
+    proxy_pass https://127.0.0.1:${dashboard_port};
     proxy_ssl_verify off;
   }
 }
@@ -226,6 +261,36 @@ main() {
     echo "WARNING: dashboard/.env contains the placeholder SESSION_SECRET. Replace it with a long random value before going to production."
   fi
 
+  local mysql_port_pref
+  mysql_port_pref=$(trim "$(get_env_value MYSQL_PORT)")
+  mysql_port_pref=${mysql_port_pref:-3306}
+  local mysql_port
+  if ! mysql_port=$(find_available_port "$mysql_port_pref" 100); then
+    echo "Unable to find a free port for MySQL starting at $mysql_port_pref. Please free some ports and re-run deploy.sh." >&2
+    exit 1
+  fi
+  set_env_value MYSQL_PORT "$mysql_port"
+  if [ "$mysql_port" != "$mysql_port_pref" ]; then
+    echo "MySQL port $mysql_port_pref was in use; switching to $mysql_port."
+  else
+    echo "Using MySQL port $mysql_port."
+  fi
+
+  local dashboard_port_pref
+  dashboard_port_pref=$(trim "$(get_env_value DASHBOARD_PORT)")
+  dashboard_port_pref=${dashboard_port_pref:-8443}
+  local dashboard_port
+  if ! dashboard_port=$(find_available_port "$dashboard_port_pref" 100); then
+    echo "Unable to find a free port for the dashboard starting at $dashboard_port_pref. Please free some ports and re-run deploy.sh." >&2
+    exit 1
+  fi
+  set_env_value DASHBOARD_PORT "$dashboard_port"
+  if [ "$dashboard_port" != "$dashboard_port_pref" ]; then
+    echo "Dashboard port $dashboard_port_pref was in use; switching to $dashboard_port."
+  else
+    echo "Using dashboard port $dashboard_port."
+  fi
+
   detect_package_manager
   if [ -z "$PKG_MANAGER" ] && ! command -v nginx >/dev/null 2>&1; then
     echo "No automatic package manager detected. Install nginx manually before running deploy.sh." >&2
@@ -254,7 +319,7 @@ main() {
     exit 1
   fi
 
-  configure_nginx_site "$domain"
+  configure_nginx_site "$domain" "$dashboard_port"
   obtain_ssl_certificate "$domain" "$cert_email"
 
   ensure_compose_command
