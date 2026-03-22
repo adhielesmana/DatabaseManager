@@ -99,6 +99,7 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 - **Firewalls**: Keep the host firewall allowing nginx traffic; the dashboard endpoint and certbot challenges rely on being reachable on port 80/443.
 - **Nginx errors**: Check `/var/log/nginx/error.log` for upstream TLS or proxy issues. The `deploy.sh` output tells you if the nginx config test fails.
 - **Port conflicts**: `deploy.sh` detects busy ports and bumps both the MySQL and dashboard bindings until it finds a free slot, but it keeps the current ports when they are already owned by this project’s running containers.
+- **Superadmin reset**: If you lose the private login, run `./scripts/reset-dashboard-superadmin.sh [username] [password]` on the server. If you omit the password, the script generates a new one, writes it only to `dashboard/.env`, bumps the build id, and rebuilds the dashboard container.
 
 ## Next steps
 
