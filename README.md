@@ -27,18 +27,18 @@ This repository ships a Dockerized **MySQL server** with mandatory TLS and a **d
 - Run `./intelligent-deploy.sh` whenever you need to pull new images/rebuild. It checks that `DOMAIN` exists in `.env`, pulls the newest containers, and runs `docker compose up -d --build` with the same compose files.
 
 ## Accessing the services
-- **Dashboard**: visit `https://<DOMAIN>` after the `deploy.sh` completes. Nginx terminates TLS, forwards traffic to the dashboard, and the UI enforces role-based gating (superadmin can import/export CSVs).
+- **Dashboard**: visit `https://<DOMAIN>` after the `deploy.sh` completes. Nginx terminates TLS, forwards traffic to the dashboard, and the UI enforces role-based gating (superadmin can import/export CSVs). Credentials are defined in `dashboard/server/index.js`, so rotate them there instead of publishing passwords.
 - **MySQL**: the container exposes TLS on port `${MYSQL_PORT:-3306}`. Copy `certs/mysql/ca.pem` to any remote client and connect as:
   ```bash
   mysql \
     --host=HOST \
     --port=${MYSQL_PORT:-3306} \
     --user=db_admin \
-    --password='<Adm1n@DB2026!>' \
+    --password='<your-db_admin-password>' \
     --ssl-ca=certs/mysql/ca.pem \
     --ssl-mode=VERIFY_CA
   ```
-  Replace `HOST` with the machine hosting the stack. Use `db_read` for read-only access.
+  Replace `HOST` with the machine hosting the stack and swap `<your-db_admin-password>` with the value stored in `.env`. Use `db_read` for read-only access.
 
 ## Security notes
 - MySQL enforces TLS (`require_secure_transport=ON`) and the dashboard connects to it using the CA under `/etc/mysql/ssl/ca.pem` even when internal TLS is skipped.
