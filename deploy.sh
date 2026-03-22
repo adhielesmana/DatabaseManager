@@ -6,6 +6,9 @@ ENV_FILE="$ROOT/.env"
 ENV_EXAMPLE="$ROOT/.env.example"
 DASH_ENV="$ROOT/dashboard/.env"
 DASH_ENV_EX="$ROOT/dashboard/.env.example"
+DOCKER_COMPOSE_FILE="$ROOT/docker-compose.yml"
+CERTBOT_WEBROOT="/var/www/certbot"
+NGINX_SITE_NAME="database-manager.conf"
 UPDATED_PKGS=0
 PKG_MANAGER=""
 COMPOSE_CMD=()
@@ -253,6 +256,30 @@ ensure_docker_compose() {
   fi
 }
 
+compose_service_uses_port() {
+  local service=$1
+  local host_port=$2
+  if [ ${#COMPOSE_CMD[@]} -eq 0 ]; then
+    return 1
+  fi
+  local container_id
+  container_id=$(cd "$ROOT" && "${COMPOSE_CMD[@]}" -f "$DOCKER_COMPOSE_FILE" ps -q "$service" 2>/dev/null | head -n1)
+  if [ -z "$container_id" ]; then
+    return 1
+  fi
+  docker port "$container_id" 2>/dev/null | awk -v target="$host_port" '
+    {
+      split($3, parts, ":")
+      if (parts[length(parts)] == target) {
+        found = 1
+      }
+    }
+    END {
+      exit(found ? 0 : 1)
+    }
+  '
+}
+
 port_in_use() {
   local port=$1
   if [ -n "$PYTHON_BIN" ]; then
@@ -323,10 +350,18 @@ PY
 
 find_available_port() {
   local start_port=$1
+  local service_name=${2:-}
   local max_port=${2:-65535}
+  if [ -n "$service_name" ]; then
+    max_port=${3:-65535}
+  fi
   local port=$start_port
   while [ "$port" -le "$max_port" ]; do
     if ! port_in_use "$port"; then
+      printf '%s' "$port"
+      return 0
+    fi
+    if [ -n "$service_name" ] && compose_service_uses_port "$service_name" "$port"; then
       printf '%s' "$port"
       return 0
     fi
@@ -335,74 +370,199 @@ find_available_port() {
   return 1
 }
 
-configure_nginx_site() {
-  local domain=$1
-  local dashboard_port=${2:-8443}
-  local use_https=${3:-true}
-  local sites_available="/etc/nginx/sites-available"
-  local sites_enabled="/etc/nginx/sites-enabled"
-  local symlink=false
-
-  if [ ! -d "$sites_available" ]; then
-    sites_available="/etc/nginx/conf.d"
-    sites_enabled="$sites_available"
+nginx_paths() {
+  local key=$1
+  if [ -d "/etc/nginx/sites-available" ]; then
+    case "$key" in
+      available) printf '%s' "/etc/nginx/sites-available" ;;
+      enabled) printf '%s' "/etc/nginx/sites-enabled" ;;
+      *) return 1 ;;
+    esac
+    return 0
   fi
-
-  mkdir -p "$sites_available" "$sites_enabled"
-  local conf_path="$sites_available/database-manager.conf"
-  local proxy_pass_line
-  local proxy_ssl_line=""
-  if [ "$use_https" = "true" ]; then
-    proxy_pass_line="    proxy_pass https://127.0.0.1:${dashboard_port};"
-    proxy_ssl_line="    proxy_ssl_verify off;"
-  else
-    proxy_pass_line="    proxy_pass http://127.0.0.1:${dashboard_port};"
-  fi
-  cat <<NGINX > "$conf_path"
-server {
-  listen 80;
-  server_name ${domain};
-
-  location /.well-known/acme-challenge/ {
-    root /var/www/html;
-  }
-
-  location / {
-    proxy_set_header Host \$host;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
-${proxy_pass_line}
-${proxy_ssl_line}
-  }
+  printf '%s' "/etc/nginx/conf.d"
 }
-NGINX
 
-  if [ "$sites_available" != "$sites_enabled" ]; then
-    ln -sf "$conf_path" "$sites_enabled/database-manager.conf"
-    symlink=true
-  fi
-
-  if [ -e "$sites_enabled/default" ]; then
-    rm -f "$sites_enabled/default"
-  fi
-
+nginx_reload() {
   nginx -t
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl reload nginx
+    systemctl enable nginx >/dev/null 2>&1 || true
+    if systemctl is-active --quiet nginx; then
+      systemctl reload nginx
+    else
+      systemctl start nginx
+    fi
   else
     nginx -s reload
   fi
 }
 
+proxy_pass_snippet() {
+  local dashboard_port=$1
+  local upstream_https=$2
+  if [ "$upstream_https" = "true" ]; then
+    cat <<EOF
+    proxy_pass https://127.0.0.1:${dashboard_port};
+    proxy_ssl_server_name on;
+    proxy_ssl_verify off;
+EOF
+    return
+  fi
+  cat <<EOF
+    proxy_pass http://127.0.0.1:${dashboard_port};
+EOF
+}
+
+write_nginx_site() {
+  local domain=$1
+  local dashboard_port=$2
+  local upstream_https=$3
+  local mode=$4
+  local sites_available
+  local sites_enabled
+  sites_available=$(nginx_paths available)
+  sites_enabled=$(nginx_paths enabled)
+  mkdir -p "$sites_available" "$sites_enabled" "$CERTBOT_WEBROOT"
+  local conf_path="$sites_available/$NGINX_SITE_NAME"
+  local proxy_block
+  proxy_block=$(proxy_pass_snippet "$dashboard_port" "$upstream_https")
+
+  if [ "$mode" = "bootstrap" ]; then
+    cat <<NGINX > "$conf_path"
+server {
+  listen 80;
+  listen [::]:80;
+  server_name ${domain};
+
+  location /.well-known/acme-challenge/ {
+    root ${CERTBOT_WEBROOT};
+  }
+
+  location / {
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+${proxy_block}
+  }
+}
+NGINX
+  else
+    cat <<NGINX > "$conf_path"
+server {
+  listen 80;
+  listen [::]:80;
+  server_name ${domain};
+
+  location /.well-known/acme-challenge/ {
+    root ${CERTBOT_WEBROOT};
+  }
+
+  location / {
+    return 301 https://\$host\$request_uri;
+  }
+}
+
+server {
+  listen 443 ssl;
+  listen [::]:443 ssl;
+  server_name ${domain};
+
+  ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
+  ssl_session_cache shared:SSL:10m;
+  ssl_session_timeout 1d;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_prefer_server_ciphers off;
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+  location /.well-known/acme-challenge/ {
+    root ${CERTBOT_WEBROOT};
+  }
+
+  location / {
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+${proxy_block}
+  }
+}
+NGINX
+  fi
+
+  if [ "$sites_available" != "$sites_enabled" ]; then
+    ln -sf "$conf_path" "$sites_enabled/$NGINX_SITE_NAME"
+  fi
+
+  if [ -e "$sites_enabled/default" ]; then
+    rm -f "$sites_enabled/default"
+  fi
+}
+
+ensure_nginx_site() {
+  local domain=$1
+  local dashboard_port=$2
+  local upstream_https=$3
+  local mode=$4
+  write_nginx_site "$domain" "$dashboard_port" "$upstream_https" "$mode"
+  nginx_reload
+}
+
+certificates_exist() {
+  local domain=$1
+  [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/$domain/privkey.pem" ]
+}
+
 obtain_ssl_certificate() {
   local domain=$1
   local email=$2
-  if [ -d "/etc/letsencrypt/live/$domain" ]; then
-    echo "Certificate for $domain already exists. Skipping certbot issuance."
-    return
+  mkdir -p "$CERTBOT_WEBROOT"
+  certbot certonly \
+    --webroot \
+    --webroot-path "$CERTBOT_WEBROOT" \
+    --keep-until-expiring \
+    --agree-tos \
+    --noninteractive \
+    --email "$email" \
+    -d "$domain"
+}
+
+wait_for_dashboard() {
+  local dashboard_port=$1
+  local upstream_https=$2
+  local max_attempts=${3:-30}
+  local scheme="http"
+  local curl_args=(-fsS)
+  if [ "$upstream_https" = "true" ]; then
+    scheme="https"
+    curl_args+=(-k)
   fi
-  certbot --nginx --redirect --agree-tos --noninteractive --email "$email" -d "$domain"
+  ensure_curl
+  local attempt=1
+  while [ "$attempt" -le "$max_attempts" ]; do
+    if curl "${curl_args[@]}" "${scheme}://127.0.0.1:${dashboard_port}/api/status" >/dev/null 2>&1; then
+      echo "Dashboard is responding on ${scheme}://127.0.0.1:${dashboard_port}."
+      return 0
+    fi
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+  echo "Dashboard did not become ready on ${scheme}://127.0.0.1:${dashboard_port}." >&2
+  return 1
+}
+
+verify_https_proxy() {
+  local domain=$1
+  ensure_curl
+  if curl -fsS --resolve "${domain}:443:127.0.0.1" "https://${domain}/api/status" >/dev/null 2>&1; then
+    echo "Verified nginx is serving https://${domain}/api/status."
+    return 0
+  fi
+  echo "nginx did not successfully proxy https://${domain}/api/status." >&2
+  return 1
 }
 
 main() {
@@ -447,11 +607,19 @@ main() {
     upstream_https=true
   fi
 
+  if [ -z "$PKG_MANAGER" ] && ! command -v nginx >/dev/null 2>&1; then
+    echo "No automatic package manager detected. Install nginx manually before running deploy.sh." >&2
+    exit 1
+  fi
+  ensure_docker_runtime
+  ensure_docker_compose
+  ensure_compose_command
+
   local mysql_port_pref
   mysql_port_pref=$(trim "$(get_env_value MYSQL_PORT)")
   mysql_port_pref=${mysql_port_pref:-3306}
   local mysql_port
-  if ! mysql_port=$(find_available_port "$mysql_port_pref"); then
+  if ! mysql_port=$(find_available_port "$mysql_port_pref" "mysql"); then
     echo "Unable to find a free port for MySQL starting at $mysql_port_pref. Please free some ports and re-run deploy.sh." >&2
     exit 1
   fi
@@ -466,7 +634,7 @@ main() {
   dashboard_port_pref=$(trim "$(get_env_value DASHBOARD_PORT)")
   dashboard_port_pref=${dashboard_port_pref:-8443}
   local dashboard_port
-  if ! dashboard_port=$(find_available_port "$dashboard_port_pref"); then
+  if ! dashboard_port=$(find_available_port "$dashboard_port_pref" "dashboard"); then
     echo "Unable to find a free port for the dashboard starting at $dashboard_port_pref. Please free some ports and re-run deploy.sh." >&2
     exit 1
   fi
@@ -477,12 +645,6 @@ main() {
     echo "Using dashboard port $dashboard_port."
   fi
 
-  if [ -z "$PKG_MANAGER" ] && ! command -v nginx >/dev/null 2>&1; then
-    echo "No automatic package manager detected. Install nginx manually before running deploy.sh." >&2
-    exit 1
-  fi
-  ensure_docker_runtime
-  ensure_docker_compose
   if ! command -v nginx >/dev/null 2>&1; then
     install_packages nginx
     if command -v systemctl >/dev/null 2>&1; then
@@ -497,7 +659,7 @@ main() {
   fi
 
   if ! command -v certbot >/dev/null 2>&1; then
-    install_packages certbot python3-certbot-nginx
+    install_packages certbot
   else
     echo "certbot already installed."
   fi
@@ -506,16 +668,31 @@ main() {
     exit 1
   fi
 
-  obtain_ssl_certificate "$domain" "$cert_email"
+  echo "Configuring nginx bootstrap site for certificate validation..."
+  ensure_nginx_site "$domain" "$dashboard_port" "$upstream_https" "bootstrap"
 
-  configure_nginx_site "$domain" "$dashboard_port" "$upstream_https"
+  if certificates_exist "$domain"; then
+    echo "Certificate for $domain already exists. Reusing the current files."
+  else
+    echo "Obtaining a Let's Encrypt certificate for $domain..."
+    obtain_ssl_certificate "$domain" "$cert_email"
+  fi
+  if ! certificates_exist "$domain"; then
+    echo "Certificate files for $domain were not found after certbot ran." >&2
+    exit 1
+  fi
 
-  ensure_compose_command
   echo "Generating internal TLS certs for MySQL and the dashboard..."
   "$ROOT/scripts/generate-certs.sh"
 
   echo "Bringing up docker compose stack..."
-  "${COMPOSE_CMD[@]}" -f "$ROOT/docker-compose.yml" up -d --build
+  "${COMPOSE_CMD[@]}" -f "$DOCKER_COMPOSE_FILE" up -d --build
+
+  wait_for_dashboard "$dashboard_port" "$upstream_https"
+
+  echo "Applying the final HTTPS nginx configuration..."
+  ensure_nginx_site "$domain" "$dashboard_port" "$upstream_https" "final"
+  verify_https_proxy "$domain"
 
   echo "Deployment complete. Dashboard should be available over HTTPS at https://$domain." 
   echo "Make sure the firewall allows ports 80 and 443 and keep $ENV_FILE and dashboard/.env out of source control."

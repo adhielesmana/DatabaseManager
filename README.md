@@ -69,8 +69,8 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 
 - Run the script as root so it can install nginx, certbot, Docker, and any missing dependencies (`python3`, `curl`, etc.).
 - The script asks for `DOMAIN` only if `.env` lacks a value. Once set, it reuses that domain on subsequent runs.
-- It checks the preferred ports (starting at 3306 for MySQL, 8443 for the dashboard) and scans sequentially until it finds unused ports, writing the result back to `.env` so nginx, Docker, and your clients stay in sync.
-- Host-level nginx and certbot are configured to proxy `https://<DOMAIN>` to the dashboard; certbot obtains TLS certificates (or reuses existing ones) and enables HTTP→HTTPS redirects.
+- It checks the preferred ports (starting at 3306 for MySQL, 8443 for the dashboard), reuses them when they already belong to this stack, and otherwise scans sequentially until it finds unused ports before writing the result back to `.env`.
+- Host-level nginx is fully managed by `deploy.sh`: it boots a temporary HTTP config for ACME validation, asks certbot for a certificate without letting certbot rewrite nginx, then installs the final HTTP->HTTPS reverse-proxy config that matches the dashboard’s internal protocol.
 - Docker Compose brings up MySQL (with the generated CA) and the dashboard container; `deploy.sh` rebuilds every run to keep the certs and environment aligned.
 
 ### 3. Updates (`./intelligent-deploy.sh`)
@@ -98,7 +98,7 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 - **Certificate rotation**: Run `scripts/generate-certs.sh`, then `./deploy.sh` (or `./intelligent-deploy.sh`) to rebuild containers with the new files.
 - **Firewalls**: Keep the host firewall allowing nginx traffic; the dashboard endpoint and certbot challenges rely on being reachable on port 80/443.
 - **Nginx errors**: Check `/var/log/nginx/error.log` for upstream TLS or proxy issues. The `deploy.sh` output tells you if the nginx config test fails.
-- **Port conflicts**: `deploy.sh` detects busy ports and bumps both the MySQL and dashboard bindings until it finds a free slot, so you can run the stack alongside other services safely.
+- **Port conflicts**: `deploy.sh` detects busy ports and bumps both the MySQL and dashboard bindings until it finds a free slot, but it keeps the current ports when they are already owned by this project’s running containers.
 
 ## Next steps
 
