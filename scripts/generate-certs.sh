@@ -66,6 +66,11 @@ cp "$CERT_ROOT/mysql-key.pem" "$MYSQL_CERT_DIR/server-key.pem"
 cp "$CERT_ROOT/mysql-cert.pem" "$MYSQL_CERT_DIR/server-cert.pem"
 cp "$CERT_ROOT/dashboard-key.pem" "$DASHBOARD_CERT_DIR/dashboard-key.pem"
 cp "$CERT_ROOT/dashboard-cert.pem" "$DASHBOARD_CERT_DIR/dashboard-cert.pem"
+chmod 644 "$MYSQL_CERT_DIR/ca.pem" "$DASHBOARD_CERT_DIR/ca.pem"
+chmod 600 "$MYSQL_CERT_DIR/server-key.pem" "$MYSQL_CERT_DIR/server-cert.pem"
+chmod 600 "$DASHBOARD_CERT_DIR/dashboard-key.pem" "$DASHBOARD_CERT_DIR/dashboard-cert.pem"
+chown 999:999 "$MYSQL_CERT_DIR/server-key.pem" "$MYSQL_CERT_DIR/server-cert.pem" "$MYSQL_CERT_DIR/ca.pem"
+chown 999:999 "$DASHBOARD_CERT_DIR/dashboard-key.pem" "$DASHBOARD_CERT_DIR/dashboard-cert.pem" "$DASHBOARD_CERT_DIR/ca.pem"
 rm -f "$CERT_ROOT"/*.csr "$CERT_ROOT"/*-ext.cnf
 cat <<'MSG'
 Certificates generated under $CERT_ROOT. Install $CA_CERT in each client and configure TLS.

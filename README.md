@@ -1,76 +1,107 @@
+# DatabaseManager
+
+<p align="center"><em>A zero-trust remote MySQL + dashboard platform that installs via Docker while leaving TLS termination and routing on the host.</em></p>
+
 <table>
   <tr>
-    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/MySQL_logo.svg/160px-MySQL_logo.svg.png" width="80" alt="MySQL logo"><br>MySQL 8.1</td>
-    <td align="center"><img src="https://www.docker.com/wp-content/uploads/2022/03/Moby-logo.png" width="100" alt="Docker"><br>Docker Compose</td>
-    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/d/d9/Node.js_logo.svg" width="110" alt="Node.js"><br>Node.js Dashboard</td>
+    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/MySQL.svg/128px-MySQL.svg.png" width="84" alt="MySQL"><br><strong>MySQL 8.1</strong><br><span style="color:#f29111;">TLS-only + CA / Role-based users</span></td>
+    <td align="center"><img src="https://www.docker.com/wp-content/uploads/2022/03/Moby-logo.png" width="110" alt="Docker"><br><strong>Docker Compose</strong><br><span style="color:#2496ed;">Self-healing containers</span></td>
+    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/9/99/Unofficial_JavaScript_logo_2.svg" width="80" alt="Node.js"><br><strong>Node / Express</strong><br><span style="color:#6cc24a;">Dashboard + CSV tooling</span></td>
+    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/c/c5/Nginx_logo.svg" width="85" alt="Nginx"><br><strong>Nginx</strong><br><span style="color:#3e8eff;">Host TLS + reverse proxy</span></td>
+    <td align="center"><img src="https://upload.wikimedia.org/wikipedia/commons/2/24/Certbot_logo.svg" width="140" alt="Certbot"><br><strong>Certbot</strong><br><span style="color:#ffb703;">LetsEncrypt automation</span></td>
   </tr>
 </table>
 
-# DatabaseManager Stack
+## Why it matters
 
-**Secure** · **TLS-first** · **Role-enabled**
+- **Remote-safe data plane** – MySQL enforces `require_secure_transport`, the dashboard works only over HTTPS, and every client must trust the generated CA (`certs/mysql/ca.pem`).
+- **Role-aware operations** – Superadmin / admin / user roles gate schema browsing, export/import, and SQL consoles without shipping a full DBA tool.
+- **Automatic host prep** – `deploy.sh` installs Docker, Docker Compose, nginx, and certbot when missing, detects open ports, seeds secrets, and wires nginx/certbot on the host.
+- **CI-friendly updates** – `intelligent-deploy.sh` pulls updates and rebuilds the containers without tampering with host services.
 
-Deliver a hardened MySQL server behind TLS plus a management dashboard that lets your team read schemas, run scoped `SELECT` queries, and ingest/export CSVs. Everything ships as Docker Compose services, with `deploy.sh` automating nginx/certbot, certificates, and stack launch while `intelligent-deploy.sh` handles updates.
-
-## Why this stack?
-
-| Concern | What you get |
-|--------|-------------|
-| **Encrypted transport everywhere** | MySQL runs with `require_secure_transport` plus custom CA/signed certs, while the dashboard is reachable over HTTPS (or via nginx when `SKIP_INTERNAL_TLS=true`).
-| **Role-based UX** | Superadmin, admin, and user roles gate import/export, query tooling, and what’s shown in the SPA (`dashboard/server/index.js`).
-| **Remote-ready operations** | `deploy.sh` detects host packages, obtains Let’s Encrypt certs, and sources `DOMAIN`/`CERT_EMAIL` once; `intelligent-deploy.sh` simply updates containers via Docker Compose.
-| **Auditable changes** | All secrets live in `.env` / `dashboard/.env`, which are gitignored and seeded from the `.example` templates.
-
-## Stack architecture
+## Architecture
 
 ```mermaid
 flowchart LR
-  subgraph Host
-    nginx["Nginx\n(TLS + reverse proxy)"]
-    certbot["Certbot/\nLet’s Encrypt"]
-    docker["Docker\nEngine"]
+  subgraph HostNode[Host OS + Services]
+    NGINX[Nginx<br/>TLS + reverse proxy]
+    CERTBOT[Certbot / Lets Encrypt]
+    DOCKER[Docker Engine]
   end
-  subgraph Containers
-    mysql["MySQL 8.1\nw/ CA"]
-    dashboard["Node.js\nDashboard"]
+  subgraph Containers[Docker network]
+    DASH[Dashboard<br/>Node.js + Express]
+    MYSQL[MySQL 8.1<br/>TLS + CA]
   end
-  nginx -->|proxy| dashboard
-  dashboard -->|SSL| mysql
-  docker --> mysql
-  docker --> dashboard
-  certbot --> nginx
-  mysql --bind SSL--> clients(["Remote clients\nover TLS"])
-```
+  subgraph Clients[Remote apps / web]
+    CLIENTS[Clients over TLS]
+  end
+  CLIENTS -->|HTTPS| NGINX
+  NGINX -->|proxy| DASH
+  DASH -->|TLS| MYSQL
+  DOCKER --> DASH
+  DOCKER --> MYSQL
+  CERTBOT --> NGINX
+  classDef nginx fill:#1a73e8,stroke:#0c47a1,color:#fff;
+  classDef docker fill:#2496ed,stroke:#176ea8,color:#fff;
+  classDef mysql fill:#f29111,stroke:#ac6100,color:#fff;
+  classDef dashboard fill:#2eb879,stroke:#1a8c5b,color:#fff;
+  classDef clients fill:#636e72,stroke:#1e272e,color:#fff;
+  classDef certbot fill:#f5a623,stroke:#d17b00,color:#111;
+  class NGINX nginx;
+  class DOCKER docker;
+  class MYSQL mysql;
+  class DASH dashboard;
+  class CLIENTS clients;
+  class CERTBOT certbot;
+``` 
 
-> Colors: nginx (blue), dashboard (green), MySQL (orange). The dashboard still generates internal certs (for `SKIP_INTERNAL_TLS=false`), even when nginx terminates TLS.
+The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL and dashboard workloads inside a dedicated bridge network (`dbnet`).
 
-## Deployment workflow
+## Deployment
 
-1. **Prepare**: copy `.env.example` → `.env` and `dashboard/.env.example` → `dashboard/.env` if you prefer to edit offline.
-2. **First install**: run `sudo ./deploy.sh`. It will:
-   - prompt once for `DOMAIN` (or re-use existing value and skip the prompt thereafter), set `CERT_EMAIL`, and append origins to `ALLOWED_ORIGINS`.
-   - detect/ install `nginx` + `certbot` if missing, and configure a lightweight site that proxies `https://<DOMAIN>` to the dashboard.
-   - run `certbot --nginx --redirect` to grab certs, set `SKIP_INTERNAL_TLS=true`, and generate the CA/certs required by the containers. nginx proxies to the dashboard using HTTP when `SKIP_INTERNAL_TLS` is true so the host terminates TLS.
-  - install Docker and Docker Compose (or their distributions) via the host package manager; if the Compose plugin isn’t available on apt/yum/dnf, it pulls the official release binary so the stack can bring up the containers without extra manual steps.
-  - inspect the base ports (`${MYSQL_PORT:-3306}` and `${DASHBOARD_PORT:-8443}`) and automatically bump them until it finds a free port (up to 65535), updating `.env` with the chosen values so the Compose stack and nginx proxy stay in sync even on busy systems. It looks for listeners via `ss`, `netstat`, or `lsof` so the scan works on most Linux hosts. 
-   - bring up the Compose stack (`docker compose up -d --build`).
-3. **Updates**: run `./intelligent-deploy.sh` (no sudo). It ensures `DOMAIN` exists and simply pulls + rebuilds the Compose services.
+### 1. Prep secrets
 
-## Runtime operations
+1. Copy `.env.example` → `.env` and `dashboard/.env.example` → `dashboard/.env` if you prefer editing offline. The default files stay in `.gitignore` and must never be committed anywhere (see Security below).
+2. The dashboard users, roles, and hashed passwords live in `dashboard/server/index.js`. Superadmin is `adhielesmana` (password hashed in the file); change the hash or add your own identity provider before exposing to production.
+3. The first run of `deploy.sh` seeds a strong `SESSION_SECRET`, generates the CA certs, and appends `https://<DOMAIN>` to `dashboard/.env` origins automatically.
 
-- **Dashboard access**: visit `https://<DOMAIN>` and authenticate with the credentials defined in `dashboard/server/index.js`; change them there whenever you rotate user roles.
-- **MySQL access**: copy `certs/mysql/ca.pem` to remote clients and connect over TLS on `${MYSQL_PORT:-3306}`, supplying the username/password you set in `.env` (`db_admin`/`db_read`).
-- **Logs**: inspect `docker compose logs mysql` and `docker compose logs dashboard` for service output; `deploy.sh` and `intelligent-deploy.sh` already run `docker compose up -d --build`, so `down/up` can be used for full restarts.
+### 2. First install (`sudo ./deploy.sh`)
 
-## Security notes
+- Run the script as root so it can install nginx, certbot, Docker, and any missing dependencies (`python3`, `curl`, etc.).
+- The script asks for `DOMAIN` only if `.env` lacks a value. Once set, it reuses that domain on subsequent runs.
+- It checks the preferred ports (starting at 3306 for MySQL, 8443 for the dashboard) and scans sequentially until it finds unused ports, writing the result back to `.env` so nginx, Docker, and your clients stay in sync.
+- Host-level nginx and certbot are configured to proxy `https://<DOMAIN>` to the dashboard; certbot obtains TLS certificates (or reuses existing ones) and enables HTTP→HTTPS redirects.
+- Docker Compose brings up MySQL (with the generated CA) and the dashboard container; `deploy.sh` rebuilds every run to keep the certs and environment aligned.
 
-- Session cookies are `secure`, `httpOnly`, and `sameSite='none'` to work behind TLS proxies.
-- The dashboard enforces `SKIP_INTERNAL_TLS` when nginx handles HTTPS, but it still reaches MySQL over TLS using the generated CA.
-- `.env`, `.dashboard/.env`, and `certs/` are excluded from git; never commit them.
-- Rotate the CA/certs by re-running `scripts/generate-certs.sh` and restarting the stack.
+### 3. Updates (`./intelligent-deploy.sh`)
+
+- Run without sudo.
+- It verifies `DOMAIN` is populated, pulls image updates, rebuilds the services, and restarts the stack via `docker compose up -d --build`.
+- This script assumes the host services (nginx, certbot, Docker) already exist.
+
+## Access & Role model
+
+- Dashboard: `https://<DOMAIN>` → log in through the SPA. Superadmin (`adhielesmana`) can import/export CSVs, run queries, and manage roles. Admin and user roles limit exports/imports and the SQL console; update the roles or hashes in `dashboard/server/index.js`.
+- MySQL: Remote clients must connect using the TLS CA at `certs/mysql/ca.pem` and the credentials defined in `.env` (`MYSQL_USER` / `MYSQL_PASSWORD`). The `MYSQL_PORT` might shift if the default was busy; consult `.env` for the active value.
+- Logs: `docker compose logs mysql` and `docker compose logs dashboard` show internal output. The host logs (`/var/log/nginx/error.log`) surface TLS issues.
+
+## Security & secrets
+
+- **Never share `.env`, `dashboard/.env`, or the `certs/` directory on GitHub or any public storage.** Those files are excluded by `.gitignore` for a reason.
+- Session cookies are `secure`, `httpOnly`, and `sameSite=none`. The script auto-generates a strong `SESSION_SECRET` when the dashboard env file is created or left with the placeholder value.
+- MySQL runs with `require_secure_transport=ON` and uses the CA in `certs/mysql`. Rotate certificates with `scripts/generate-certs.sh` and restart the stack.
+- The dashboard enforces the `ALLOWED_ORIGINS` list and rejects unknown websites; every new domain is appended automatically from `deploy.sh`.
+
+## Operations & troubleshooting
+
+- **Ports**: Open host ports 80/443 for nginx plus the `MYSQL_PORT` from `.env` for remote apps.
+- **Certificate rotation**: Run `scripts/generate-certs.sh`, then `./deploy.sh` (or `./intelligent-deploy.sh`) to rebuild containers with the new files.
+- **Firewalls**: Keep the host firewall allowing nginx traffic; the dashboard endpoint and certbot challenges rely on being reachable on port 80/443.
+- **Nginx errors**: Check `/var/log/nginx/error.log` for upstream TLS or proxy issues. The `deploy.sh` output tells you if the nginx config test fails.
+- **Port conflicts**: `deploy.sh` detects busy ports and bumps both the MySQL and dashboard bindings until it finds a free slot, so you can run the stack alongside other services safely.
 
 ## Next steps
 
-- Integrate with Vault or IAM for user management instead of the hard-coded dashboard users.
-- Put nginx/certbot behind Caddy or Traefik if you need multi-domain routing, OCSP stapling, or HTTP/2.
-- Automate certificate rotation/backups for `certs/` and refresh the CA when your infrastructure changes.
+- Hook the dashboard into a real identity provider or Vault instead of the embedded users.
+- Add monitoring alerts for the MySQL CA and dashboard certificates to refresh before expiration.
+- Consider using a reverse proxy like Traefik if routing multiple domains off the same host.

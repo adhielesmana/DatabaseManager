@@ -9,6 +9,7 @@ DASH_ENV_EX="$ROOT/dashboard/.env.example"
 UPDATED_PKGS=0
 PKG_MANAGER=""
 COMPOSE_CMD=()
+PYTHON_BIN=""
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "deploy.sh must be run with root privileges (sudo) so it can install packages and configure nginx." >&2
@@ -90,6 +91,34 @@ append_allowed_origin() {
   set_dash_env_value ALLOWED_ORIGINS "$current,$origin"
 }
 
+generate_session_secret() {
+  if [ -n "$PYTHON_BIN" ] && "$PYTHON_BIN" - <<'PY'
+import secrets
+print(secrets.token_urlsafe(32))
+PY
+  then
+    return
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+    return
+  fi
+  head -c32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c64
+}
+
+ensure_session_secret() {
+  local current
+  current=$(trim "$(get_dash_env_value SESSION_SECRET)")
+  if [ -z "$current" ] || [ "$current" = "replace-with-strong-secret" ]; then
+    local secret
+    secret=$(generate_session_secret)
+    if [ -n "$secret" ]; then
+      set_dash_env_value SESSION_SECRET "$secret"
+      echo "Seeded dashboard SESSION_SECRET with a strong random value."
+    fi
+  fi
+}
+
 detect_package_manager() {
   if command -v apt-get >/dev/null 2>&1; then
     PKG_MANAGER="apt-get"
@@ -150,6 +179,37 @@ ensure_docker_runtime() {
   fi
 }
 
+ensure_python3() {
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN=$(command -v python3)
+    return
+  fi
+  if [ -n "$PKG_MANAGER" ]; then
+    install_packages python3
+    if command -v python3 >/dev/null 2>&1; then
+      PYTHON_BIN=$(command -v python3)
+      return
+    fi
+  fi
+  PYTHON_BIN=""
+  echo "python3 is required for reliable port probing; falling back to ss/netstat if available." >&2
+}
+
+ensure_curl() {
+  if command -v curl >/dev/null 2>&1; then
+    return
+  fi
+  if [ -z "$PKG_MANAGER" ]; then
+    echo "curl is required but no supported package manager was detected." >&2
+    exit 1
+  fi
+  install_packages curl
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "curl remains unavailable; install it manually and re-run deploy.sh." >&2
+    exit 1
+  fi
+}
+
 fallback_install_com=()
 fallback_install_compose() {
   local compose_version="2.29.2"
@@ -162,6 +222,7 @@ fallback_install_compose() {
     *) echo "Unsupported architecture $arch for docker-compose; install it manually." >&2
        return 1 ;;
   esac
+  ensure_curl
   curl -L "https://github.com/docker/compose/releases/download/v${compose_version}/${binary}" -o /usr/local/bin/docker-compose
   chmod +x /usr/local/bin/docker-compose
   hash -r
@@ -194,6 +255,55 @@ ensure_docker_compose() {
 
 port_in_use() {
   local port=$1
+  if [ -n "$PYTHON_BIN" ]; then
+    if "$PYTHON_BIN" - "$port" <<'PY'
+import errno
+import socket
+import sys
+
+class PortBusy(Exception):
+    pass
+
+def try_bind(family, addr):
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(addr)
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            raise PortBusy
+        if family == socket.AF_INET6 and exc.errno == errno.EAFNOSUPPORT:
+            return
+        raise
+    finally:
+        sock.close()
+
+try:
+    port_arg = int(sys.argv[1])
+except (IndexError, ValueError):
+    sys.exit(3)
+
+try:
+    try_bind(socket.AF_INET, ('0.0.0.0', port_arg))
+    try_bind(socket.AF_INET6, ('::', port_arg))
+except PortBusy:
+    sys.exit(1)
+except OSError as exc:
+    print(f"Unable to verify port {port_arg}: {exc}", file=sys.stderr)
+    sys.exit(2)
+sys.exit(0)
+PY
+    then
+      return 1
+    else
+      local python_status=$?
+      if [ "$python_status" -eq 1 ]; then
+        return 0
+      fi
+      echo "Warning: port probe exited with $python_status for port $port; falling back to ss/netstat." >&2
+    fi
+  fi
+
   if command -v ss >/dev/null 2>&1; then
     if ss -ltn | awk '{print $4}' | grep -E ":$port\$" >/dev/null 2>&1; then
       return 0
@@ -207,6 +317,7 @@ port_in_use() {
       return 0
     fi
   fi
+
   return 1
 }
 
@@ -298,8 +409,12 @@ main() {
   ensure_env_file
   if [ ! -f "$DASH_ENV" ]; then
     cp "$DASH_ENV_EX" "$DASH_ENV"
-    echo "Created dashboard/.env from template. Update SESSION_SECRET and verify SSL paths."
+    echo "Created dashboard/.env from template. deploy.sh will seed SESSION_SECRET and SSL paths must be revisited."
   fi
+
+  detect_package_manager
+  ensure_python3
+  ensure_session_secret
 
   local domain
   domain=$(trim "$(get_env_value DOMAIN)")
@@ -332,12 +447,6 @@ main() {
     upstream_https=true
   fi
 
-  local session_secret
-  session_secret=$(trim "$(get_dash_env_value SESSION_SECRET)")
-  if [ -z "$session_secret" ] || [ "$session_secret" = "replace-with-strong-random" ]; then
-    echo "WARNING: dashboard/.env contains the placeholder SESSION_SECRET. Replace it with a long random value before going to production."
-  fi
-
   local mysql_port_pref
   mysql_port_pref=$(trim "$(get_env_value MYSQL_PORT)")
   mysql_port_pref=${mysql_port_pref:-3306}
@@ -368,7 +477,6 @@ main() {
     echo "Using dashboard port $dashboard_port."
   fi
 
-  detect_package_manager
   if [ -z "$PKG_MANAGER" ] && ! command -v nginx >/dev/null 2>&1; then
     echo "No automatic package manager detected. Install nginx manually before running deploy.sh." >&2
     exit 1
