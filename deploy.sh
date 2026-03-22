@@ -263,7 +263,7 @@ main() {
   mysql_port_pref=$(trim "$(get_env_value MYSQL_PORT)")
   mysql_port_pref=${mysql_port_pref:-3306}
   local mysql_port
-  if ! mysql_port=$(find_available_port "$mysql_port_pref" 100); then
+  if ! mysql_port=$(find_available_port "$mysql_port_pref"); then
     echo "Unable to find a free port for MySQL starting at $mysql_port_pref. Please free some ports and re-run deploy.sh." >&2
     exit 1
   fi
@@ -278,7 +278,7 @@ main() {
   dashboard_port_pref=$(trim "$(get_env_value DASHBOARD_PORT)")
   dashboard_port_pref=${dashboard_port_pref:-8443}
   local dashboard_port
-  if ! dashboard_port=$(find_available_port "$dashboard_port_pref" 100); then
+  if ! dashboard_port=$(find_available_port "$dashboard_port_pref"); then
     echo "Unable to find a free port for the dashboard starting at $dashboard_port_pref. Please free some ports and re-run deploy.sh." >&2
     exit 1
   fi
