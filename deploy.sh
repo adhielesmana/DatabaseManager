@@ -307,6 +307,8 @@ sync_dashboard_database_env() {
   set_dash_env_value DB_USER "$(trim "$(get_env_value MYSQL_USER)")"
   set_dash_env_value DB_PASSWORD "$(trim "$(get_env_value MYSQL_PASSWORD)")"
   set_dash_env_value DB_NAME "$(trim "$(get_env_value MYSQL_DATABASE)")"
+  set_dash_env_value DB_SSL_CA "/app/mysql-certs/ca.pem"
+  set_dash_env_value DB_SSL_VERIFY "false"
 }
 
 ensure_mysql_credentials() {

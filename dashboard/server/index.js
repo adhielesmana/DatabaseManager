@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -21,6 +22,8 @@ const {
   DB_USER = 'db_admin',
   DB_PASSWORD = '',
   DB_NAME = 'dbmanager',
+  DB_SSL_CA = '',
+  DB_SSL_VERIFY = 'false',
   SESSION_SECRET = 'change-this-secret',
   SSL_CA,
   SSL_CERT,
@@ -47,6 +50,11 @@ if (!SKIP_INTERNAL_TLS && (!SSL_CA || !SSL_CERT || !SSL_KEY)) {
 
 if (!DB_PASSWORD || DB_PASSWORD.startsWith('replace-')) {
   console.error('Dashboard database credentials are missing. Set DB_PASSWORD in dashboard/.env before starting the server.');
+  process.exit(1);
+}
+
+if (!DB_SSL_CA || DB_SSL_CA.startsWith('replace-')) {
+  console.error('Dashboard database TLS CA is missing. Set DB_SSL_CA in dashboard/.env before starting the server.');
   process.exit(1);
 }
 
@@ -102,6 +110,9 @@ const staticRoot = path.join(__dirname, 'public');
 const indexTemplate = fs.readFileSync(path.join(staticRoot, 'index.html'), 'utf8');
 const renderedIndex = indexTemplate.replace(/__APP_BUILD_ID__/g, APP_BUILD_ID);
 const SESSION_COOKIE_NAME = 'dbmanager.sid';
+const DB_TLS_VERIFY = !['0', 'false', 'no'].includes(String(DB_SSL_VERIFY).toLowerCase());
+const importJobs = new Map();
+let latestImportJobId = null;
 
 const ROLE_LEVEL = {
   user: 1,
@@ -134,7 +145,8 @@ const pool = mysql.createPool({
   connectionLimit: 12,
   queueLimit: 0,
   ssl: {
-    ca: fs.readFileSync(SSL_CA)
+    ca: fs.readFileSync(DB_SSL_CA),
+    rejectUnauthorized: DB_TLS_VERIFY
   },
   multipleStatements: false
 });
@@ -147,8 +159,8 @@ function runMysqlImport(sqlText) {
       `--user=${DB_USER}`,
       `--password=${DB_PASSWORD}`,
       '--default-character-set=utf8mb4',
-      '--ssl-mode=VERIFY_CA',
-      `--ssl-ca=${SSL_CA}`,
+      `--ssl-mode=${DB_TLS_VERIFY ? 'VERIFY_CA' : 'REQUIRED'}`,
+      `--ssl-ca=${DB_SSL_CA}`,
       DB_NAME
     ];
 
@@ -176,6 +188,74 @@ function runMysqlImport(sqlText) {
 
     child.stdin.end(sqlText);
   });
+}
+
+function serializeImportJob(job) {
+  if (!job) {
+    return null;
+  }
+  return {
+    id: job.id,
+    filename: job.filename,
+    size: job.size,
+    status: job.status,
+    stage: job.stage,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    error: job.error || null
+  };
+}
+
+function markImportJob(jobId, patch) {
+  const current = importJobs.get(jobId);
+  if (!current) {
+    return null;
+  }
+  const updated = { ...current, ...patch };
+  importJobs.set(jobId, updated);
+  latestImportJobId = jobId;
+  return updated;
+}
+
+function createImportJob(file) {
+  const job = {
+    id: crypto.randomUUID(),
+    filename: file.originalname || 'database.sql',
+    size: file.size || 0,
+    status: 'queued',
+    stage: 'Queued for import',
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    error: null
+  };
+  importJobs.set(job.id, job);
+  latestImportJobId = job.id;
+  return job;
+}
+
+async function runImportJob(jobId, sqlText) {
+  markImportJob(jobId, {
+    status: 'running',
+    stage: 'Importing SQL into MySQL'
+  });
+
+  try {
+    await runMysqlImport(sqlText);
+    markImportJob(jobId, {
+      status: 'completed',
+      stage: 'Import completed successfully',
+      finishedAt: new Date().toISOString(),
+      error: null
+    });
+  } catch (error) {
+    console.error('sql-import', error);
+    markImportJob(jobId, {
+      status: 'failed',
+      stage: 'Import failed',
+      finishedAt: new Date().toISOString(),
+      error: error.message
+    });
+  }
 }
 
 const app = express();
@@ -270,8 +350,8 @@ app.post('/api/login', (req, res) => {
   if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
-  req.session.user = { username: user.username, role: user.role };
-  res.json({ username: user.username, role: user.role });
+  req.session.user = { username, role: user.role };
+  res.json({ username, role: user.role });
 });
 
 app.post('/api/logout', requireAuth, (req, res) => {
@@ -421,13 +501,33 @@ app.post('/api/database/import', requireRole('superadmin'), upload.single('paylo
     return res.status(400).json({ error: 'Only .sql files are allowed' });
   }
 
-  try {
-    await runMysqlImport(sqlText);
-    res.json({ imported: true });
-  } catch (error) {
-    console.error('sql-import', error);
-    res.status(500).json({ error: 'SQL import failed', detail: error.message });
+  const job = createImportJob(req.file);
+  res.status(202).json(serializeImportJob(job));
+
+  runImportJob(job.id, sqlText).catch((error) => {
+    console.error('sql-import-unhandled', error);
+    markImportJob(job.id, {
+      status: 'failed',
+      stage: 'Import failed',
+      finishedAt: new Date().toISOString(),
+      error: error.message
+    });
+  });
+});
+
+app.get('/api/database/import/latest', requireRole('superadmin'), (req, res) => {
+  if (!latestImportJobId) {
+    return res.status(204).end();
   }
+  res.json(serializeImportJob(importJobs.get(latestImportJobId)));
+});
+
+app.get('/api/database/import/:jobId', requireRole('superadmin'), (req, res) => {
+  const job = importJobs.get(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ error: 'Import job not found' });
+  }
+  res.json(serializeImportJob(job));
 });
 
 app.get('/api/status', (req, res) => {

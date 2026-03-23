@@ -27,6 +27,7 @@ services:
       - "${DASHBOARD_PORT:-8443}:8443"
     volumes:
       - ./certs/dashboard:/app/certs:ro
+      - ./certs/mysql:/app/mysql-certs:ro
     depends_on:
       - mysql
     networks:

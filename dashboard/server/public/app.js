@@ -5,7 +5,9 @@ const state = {
   rows: [],
   queryRows: [],
   limit: 50,
-  offset: 0
+  offset: 0,
+  importJob: null,
+  importPollTimer: null
 };
 
 const selectors = {
@@ -19,6 +21,7 @@ const selectors = {
   exportBtn: '#export-table',
   importInput: '#import-file',
   importBtn: '#import-submit',
+  importStatus: '#import-status',
   queryTextarea: '#custom-query',
   queryResult: '#query-result',
   refreshBtn: '#refresh-tables',
@@ -76,6 +79,7 @@ async function init() {
     if (session && session.username) {
       state.user = session;
       showDashboard();
+      await refreshImportStatus();
       await refreshTables();
     } else {
       showLogin();
@@ -87,6 +91,7 @@ async function init() {
 }
 
 function showLogin() {
+  stopImportPolling();
   document.querySelector(selectors.loginView).classList.remove('hidden');
   document.querySelector(selectors.dashboardView).classList.add('hidden');
   clearMessage();
@@ -104,9 +109,81 @@ function showDashboard() {
 function updateRoleControls() {
   const isAdmin = state.user && ['admin', 'superadmin'].includes(state.user.role);
   const isSuperadmin = state.user && state.user.role === 'superadmin';
+  const importLocked = !isSuperadmin || (state.importJob && state.importJob.status === 'running');
   $(selectors.exportBtn).disabled = !isAdmin;
-  $(selectors.importBtn).disabled = !isSuperadmin;
-  $(selectors.importInput).disabled = !isSuperadmin;
+  $(selectors.importBtn).disabled = importLocked;
+  $(selectors.importInput).disabled = importLocked;
+}
+
+function stopImportPolling() {
+  if (state.importPollTimer) {
+    window.clearTimeout(state.importPollTimer);
+    state.importPollTimer = null;
+  }
+}
+
+function scheduleImportPolling(jobId) {
+  stopImportPolling();
+  state.importPollTimer = window.setTimeout(() => {
+    refreshImportStatus(jobId).catch((error) => {
+      console.error(error);
+    });
+  }, 1500);
+}
+
+function renderImportStatus() {
+  const el = $(selectors.importStatus);
+  const job = state.importJob;
+  if (!el) return;
+  if (!job) {
+    el.textContent = 'No SQL import has been run yet.';
+    updateRoleControls();
+    return;
+  }
+
+  const sizeMb = job.size ? `${(job.size / (1024 * 1024)).toFixed(2)} MB` : 'unknown size';
+  let text = `SQL import ${job.status}: ${job.filename} (${sizeMb}) - ${job.stage}.`;
+  if (job.finishedAt) {
+    text += ` Finished at ${new Date(job.finishedAt).toLocaleString()}.`;
+  }
+  if (job.error) {
+    text += ` Error: ${job.error}`;
+  }
+  el.textContent = text;
+  updateRoleControls();
+}
+
+async function refreshImportStatus(jobId) {
+  if (!state.user || state.user.role !== 'superadmin') {
+    state.importJob = null;
+    renderImportStatus();
+    return;
+  }
+
+  try {
+    const path = jobId ? `/api/database/import/${jobId}` : '/api/database/import/latest';
+    const job = await requestJSON('GET', path);
+    state.importJob = job;
+    renderImportStatus();
+    if (job && job.status === 'running') {
+      scheduleImportPolling(job.id);
+    } else {
+      stopImportPolling();
+      if (job && job.status === 'completed') {
+        await refreshTables();
+        if (state.activeTable) {
+          await loadTableData();
+        }
+      }
+    }
+  } catch (error) {
+    if (error.message === 'Request failed') {
+      state.importJob = null;
+      renderImportStatus();
+      return;
+    }
+    throw error;
+  }
 }
 
 async function refreshTables() {
@@ -200,6 +277,7 @@ async function handleLogin(event) {
     const user = await requestJSON('POST', '/api/login', { username, password });
     state.user = user;
     showDashboard();
+    await refreshImportStatus();
     await refreshTables();
   } catch (error) {
     showMessage(error.message, 'error');
@@ -212,6 +290,7 @@ async function handleLogout() {
   } finally {
     state.user = null;
     state.activeTable = null;
+    state.importJob = null;
     document.getElementById('login-form').reset();
     showLogin();
   }
@@ -285,11 +364,10 @@ async function handleImport() {
     if (!res.ok) {
       throw new Error(data?.error || 'SQL import failed');
     }
-    showMessage('SQL import completed', 'info');
-    await refreshTables();
-    if (state.activeTable) {
-      await loadTableData();
-    }
+    state.importJob = data;
+    renderImportStatus();
+    showMessage('SQL import started', 'info');
+    scheduleImportPolling(data.id);
     fileInput.value = '';
   } catch (error) {
     showMessage(error.message, 'error');
