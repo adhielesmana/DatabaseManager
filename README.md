@@ -81,7 +81,7 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 
 ## Access & Role model
 
-- Dashboard: `https://<DOMAIN>` → log in through the SPA using the private credentials stored in `dashboard/.env`. Superadmin can import `.sql` dumps, export CSVs, run queries, and manage the full interface. Admin can export CSVs, while user stays read-only in the UI.
+- Dashboard: `https://<DOMAIN>` → log in through the SPA using the private credentials stored in `dashboard/.env`. Superadmin can import `.sql` dumps, export CSVs, run queries, and manage the full interface. SQL imports now show queued/running/completed/failed status in the dashboard. Admin can export CSVs, while user stays read-only in the UI.
 - MySQL: Remote clients must connect using the TLS CA at `certs/mysql/ca.pem` and the private credentials defined in `.env` (`MYSQL_USER` / `MYSQL_PASSWORD`). The `MYSQL_PORT` might shift if the default was busy; consult `.env` for the active value.
 - Logs: `docker compose logs mysql` and `docker compose logs dashboard` show internal output. The host logs (`/var/log/nginx/error.log`) surface TLS issues.
 
@@ -96,6 +96,7 @@ The host keeps nginx + certbot for TLS and proxying, while Docker runs the MySQL
 
 - **Ports**: Open host ports 80/443 for nginx plus the `MYSQL_PORT` from `.env` for remote apps.
 - **Certificate rotation**: Run `scripts/generate-certs.sh`, then `./deploy.sh` (or `./intelligent-deploy.sh`) to rebuild containers with the new files.
+- **MySQL credential sync**: `deploy.sh` and `./intelligent-deploy.sh` regenerate `mysql-init/99-runtime-reconcile.sql` so every MySQL restart forces the runtime users to match the private `.env` secrets.
 - **Firewalls**: Keep the host firewall allowing nginx traffic; the dashboard endpoint and certbot challenges rely on being reachable on port 80/443.
 - **Nginx errors**: Check `/var/log/nginx/error.log` for upstream TLS or proxy issues. The `deploy.sh` output tells you if the nginx config test fails.
 - **Port conflicts**: `deploy.sh` detects busy ports and bumps both the MySQL and dashboard bindings until it finds a free slot, but it keeps the current ports when they are already owned by this project’s running containers.

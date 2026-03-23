@@ -146,6 +146,7 @@ main() {
   detect_compose_command
   sync_dashboard_database_env
   set_dash_env_value APP_BUILD_ID "$(generate_app_build_id)"
+  "$ROOT/scripts/generate-mysql-reconcile.sh"
   echo "Pulling container updates..."
   (cd "$ROOT" && "${COMPOSE_CMD[@]}" pull --parallel)
   echo "Rebuilding and restarting the stack..."

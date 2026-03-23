@@ -886,6 +886,7 @@ main() {
 
   echo "Generating internal TLS certs for MySQL and the dashboard..."
   "$ROOT/scripts/generate-certs.sh"
+  "$ROOT/scripts/generate-mysql-reconcile.sh"
 
   echo "Bringing up docker compose stack..."
   "${COMPOSE_CMD[@]}" -f "$DOCKER_COMPOSE_FILE" up -d --build
