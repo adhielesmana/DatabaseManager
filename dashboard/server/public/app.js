@@ -53,6 +53,42 @@ function clearMessage() {
   showMessage('');
 }
 
+function uploadSqlFile(formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/database/import');
+    xhr.withCredentials = true;
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (typeof onProgress === 'function') {
+        onProgress(event);
+      }
+    });
+
+    xhr.onerror = () => reject(new Error('SQL upload failed'));
+    xhr.onabort = () => reject(new Error('SQL upload was cancelled'));
+
+    xhr.onload = () => {
+      let data = null;
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch (error) {
+        reject(new Error('Invalid response from SQL import endpoint'));
+        return;
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data);
+        return;
+      }
+
+      reject(new Error(data?.error || `SQL import failed (${xhr.status})`));
+    };
+
+    xhr.send(formData);
+  });
+}
+
 async function requestJSON(method, path, body) {
   const headers = { Accept: 'application/json' };
   const options = { method, credentials: 'include', headers };
@@ -109,7 +145,7 @@ function showDashboard() {
 function updateRoleControls() {
   const isAdmin = state.user && ['admin', 'superadmin'].includes(state.user.role);
   const isSuperadmin = state.user && state.user.role === 'superadmin';
-  const importLocked = !isSuperadmin || (state.importJob && state.importJob.status === 'running');
+  const importLocked = !isSuperadmin || (state.importJob && ['uploading', 'queued', 'running'].includes(state.importJob.status));
   $(selectors.exportBtn).disabled = !isAdmin;
   $(selectors.importBtn).disabled = importLocked;
   $(selectors.importInput).disabled = importLocked;
@@ -143,6 +179,13 @@ function renderImportStatus() {
 
   const sizeMb = job.size ? `${(job.size / (1024 * 1024)).toFixed(2)} MB` : 'unknown size';
   let text = `SQL import ${job.status}: ${job.filename} (${sizeMb}) - ${job.stage}.`;
+  if (job.status === 'uploading') {
+    if (typeof job.progress === 'number') {
+      text = `SQL upload in progress: ${job.filename} (${sizeMb}) - ${job.progress}% uploaded.`;
+    } else {
+      text = `SQL upload in progress: ${job.filename} (${sizeMb}).`;
+    }
+  }
   if (job.finishedAt) {
     text += ` Finished at ${new Date(job.finishedAt).toLocaleString()}.`;
   }
@@ -165,7 +208,7 @@ async function refreshImportStatus(jobId) {
     const job = await requestJSON('GET', path);
     state.importJob = job;
     renderImportStatus();
-    if (job && job.status === 'running') {
+    if (job && ['queued', 'running'].includes(job.status)) {
       scheduleImportPolling(job.id);
     } else {
       stopImportPolling();
@@ -352,24 +395,53 @@ async function handleImport() {
     showMessage('Attach a SQL file first', 'error');
     return;
   }
+  const file = fileInput.files[0];
   const formData = new FormData();
-  formData.append('payload', fileInput.files[0]);
+  formData.append('payload', file);
   try {
-    const res = await fetch('/api/database/import', {
-      method: 'POST',
-      body: formData,
-      credentials: 'include'
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      throw new Error(data?.error || 'SQL import failed');
-    }
-    state.importJob = data;
+    state.importJob = {
+      id: null,
+      filename: file.name,
+      size: file.size,
+      status: 'uploading',
+      stage: 'Uploading SQL file',
+      progress: 0,
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      error: null
+    };
     renderImportStatus();
-    showMessage('SQL import started', 'info');
+    showMessage('Uploading SQL file...', 'info');
+
+    const data = await uploadSqlFile(formData, (event) => {
+      const progress = event.lengthComputable ? Math.round((event.loaded / event.total) * 100) : null;
+      state.importJob = {
+        ...state.importJob,
+        progress,
+        stage: progress === null ? 'Uploading SQL file' : `Uploading SQL file (${progress}%)`
+      };
+      renderImportStatus();
+    });
+
+    state.importJob = { ...data, progress: null };
+    renderImportStatus();
+    showMessage('SQL import queued', 'info');
     scheduleImportPolling(data.id);
     fileInput.value = '';
   } catch (error) {
+    state.importJob = {
+      ...(state.importJob || {
+        id: null,
+        filename: file.name,
+        size: file.size,
+        startedAt: new Date().toISOString()
+      }),
+      status: 'failed',
+      stage: 'Upload failed',
+      finishedAt: new Date().toISOString(),
+      error: error.message
+    };
+    renderImportStatus();
     showMessage(error.message, 'error');
   }
 }
