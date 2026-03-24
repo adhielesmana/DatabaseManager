@@ -9,19 +9,18 @@
   <body>
     <div id="message" class="message" data-state="info"></div>
 
-    <div class="app">
-      <section id="login-view" class="login-hero">
-        <div>
-          <p style="letter-spacing: 0.25rem; text-transform: uppercase; color: #94a3b8; margin-bottom:0.25rem;">Secure Operations</p>
-          <h1 style="margin: 0; font-size: 2.25rem; font-weight: 700;">Database Control Hub</h1>
-          <p style="margin-top: 0.5rem; color: #cbd5f5; max-width: 520px;">
-            Access your MySQL deployment, import SQL dumps, run queries, and export tables—all over TLS with trusted
-            credentials.
+    <main id="login-view" class="login-page page">
+      <div class="login-shell">
+        <section class="login-promote">
+          <h1>Zenith Database Control</h1>
+          <p>
+            Securely manage your MySQL fleet with metrics, imports, exports, and insights in one polished control center.
+            Authenticate first, then explore the intelligence workspace.
           </p>
-        </div>
-        <div class="login-card">
-          <h2>Sign in</h2>
-          <p>Use your admin credentials to unlock the secure dashboard.</p>
+        </section>
+        <section class="login-panel">
+          <h2>Welcome back</h2>
+          <p>Enter your credentials to access the admin console.</p>
           <form id="login-form">
             <label>
               Username
@@ -33,84 +32,125 @@
             </label>
             <button type="submit" class="primary">Sign in</button>
           </form>
-        </div>
-      </section>
+        </section>
+      </div>
+    </main>
 
-      <section id="dashboard-view" class="dashboard-shell hidden">
+    <section id="dashboard-view" class="dashboard-page page hidden">
+      <header class="top-bar">
+        <div>
+          <h1>Secure Database Manager</h1>
+          <p class="muted">Performance, schema, import, export—all under TLS.</p>
+        </div>
+        <div class="search-box">
+          <input type="text" placeholder="Search tables or queries..." />
+        </div>
+        <div class="top-actions">
+          <button class="primary">+ New Task</button>
+          <button>Alerts</button>
+        </div>
+      </header>
+      <div class="dashboard-shell">
         <aside class="sidebar">
           <div>
-            <h3>Navigation</h3>
+            <h3>overview</h3>
             <nav>
-              <button type="button" class="active">Overview</button>
-              <button type="button">Tables</button>
+              <button class="active">Dashboard</button>
+              <button type="button">Analytics</button>
               <button type="button">SQL Import</button>
               <button type="button">Sessions</button>
             </nav>
           </div>
           <div>
-            <h3>Current Session</h3>
-            <p style="margin: 0; color: #94a3b8;">Signed in as</p>
-            <p class="sidebar-user" style="font-size: 1.1rem; margin: 0; font-weight: 600;"></p>
-            <p class="sidebar-role" style="font-size: 0.9rem; margin: 0; color: #cbd5f5;"></p>
+            <h3>management</h3>
+            <nav>
+              <button type="button">Tables</button>
+              <button type="button">Exports</button>
+              <button type="button">Settings</button>
+            </nav>
+          </div>
+          <div class="session-card">
+            <p class="muted">Signed in as</p>
+            <p class="sidebar-user"></p>
+            <p class="sidebar-role muted"></p>
           </div>
         </aside>
-
-        <main class="dashboard">
-          <header>
-            <div>
-              <h1>Secure Database Manager</h1>
-              <p class="muted">Run queries, import SQL dumps, export CSV, and inspect schemas over TLS.</p>
+        <section class="workspace">
+          <div class="dashboard-grid">
+            <div class="metric-card">
+              <small>Total Revenue</small>
+              <h3>$48,295</h3>
+              <p class="muted">+12.5% vs last month</p>
             </div>
-            <div>
-              <button id="refresh-tables" class="primary">Refresh tables</button>
+            <div class="metric-card">
+              <small>Active Users</small>
+              <h3>2,847</h3>
+              <p class="muted">+8.2% vs last month</p>
             </div>
-          </header>
-
-          <div class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>Tables</h2>
-                <p class="muted">Select any table to load its rows.</p>
-              </div>
+            <div class="metric-card">
+              <small>Total Orders</small>
+              <h3>1,432</h3>
+              <p class="muted">-3.1% vs last month</p>
             </div>
-            <div id="table-list"></div>
+            <div class="metric-card">
+              <small>Page Views</small>
+              <h3>284K</h3>
+              <p class="muted">+24.7% organic</p>
+            </div>
           </div>
 
-          <div class="panel">
+          <section class="overview-panel">
             <div class="panel-head">
-              <div>
-                <h2>Active table:</h2>
-                <p id="active-table-name" class="muted">Pick a table to begin</p>
+              <h2>Monthly Overview</h2>
+              <div class="panel-actions">
+                <button class="primary">Revenue</button>
+                <button>Orders</button>
+                <button>Profit</button>
               </div>
             </div>
-            <div id="data-actions">
+            <p class="muted">Performance trends and traffic sources</p>
+            <div class="chart-placeholder" aria-hidden="true">
+              (Chart area)
+            </div>
+          </section>
+
+          <section class="actions-panel">
+            <h2>Table Operations</h2>
+            <div class="data-actions">
               <button id="export-table" class="primary">Export CSV</button>
               <label class="import-controls">
-                <span>SQL:</span>
+                <span>SQL Dump</span>
                 <input id="import-file" type="file" accept=".sql,text/plain,application/sql" />
               </label>
               <button id="import-submit" class="primary">Import SQL</button>
             </div>
             <div id="import-status" class="muted">No SQL import has been run yet.</div>
+          </section>
+
+          <section class="panel">
+            <h2>Tables</h2>
+            <div id="table-list"></div>
             <div id="table-data"></div>
-          </div>
+          </section>
 
-          <div class="panel">
+          <section class="query-panel">
             <h2>Custom SELECT</h2>
-            <p class="muted">Only SELECT statements are permitted; semicolons are stripped.</p>
+            <p class="muted">Only SELECT statements are allowed. Semicolons are stripped.</p>
             <textarea id="custom-query" placeholder="SELECT * FROM my_table LIMIT 10"></textarea>
-            <button id="run-query" class="primary" style="margin-top: 1rem;">Run query</button>
+            <button id="run-query" class="primary">Run query</button>
             <div id="query-result"></div>
-          </div>
+          </section>
 
-          <div class="panel">
+          <section class="session-panel">
             <h2>Session</h2>
-            <p class="muted">Signed in as <strong id="current-user"></strong> (<span id="current-role"></span>)</p>
+            <p class="muted">
+              Signed in as <strong id="current-user"></strong> (<span id="current-role"></span>)
+            </p>
             <button id="logout" class="primary">Sign out</button>
-          </div>
-        </main>
-      </section>
-    </div>
+          </section>
+        </section>
+      </div>
+    </section>
 
     <script src="app.js?v=__APP_BUILD_ID__"></script>
   </body>
