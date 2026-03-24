@@ -130,6 +130,7 @@ function showLogin() {
   stopImportPolling();
   document.querySelector(selectors.loginView).classList.remove('hidden');
   document.querySelector(selectors.dashboardView).classList.add('hidden');
+  syncSessionBadges();
   clearMessage();
 }
 
@@ -138,6 +139,7 @@ function showDashboard() {
   document.querySelector(selectors.dashboardView).classList.remove('hidden');
   $(selectors.sessionUser).textContent = state.user.username;
   $(selectors.sessionRole).textContent = state.user.role;
+  syncSessionBadges();
   clearMessage();
   updateRoleControls();
 }
@@ -337,6 +339,19 @@ async function handleLogout() {
     document.getElementById('login-form').reset();
     showLogin();
   }
+}
+
+function syncSessionBadges() {
+  const usernameEls = document.querySelectorAll('#current-user, .sidebar-user');
+  const roleEls = document.querySelectorAll('#current-role, .sidebar-role');
+  const usernameText = state.user ? state.user.username : '';
+  const roleText = state.user ? state.user.role : '';
+  usernameEls.forEach((el) => {
+    el.textContent = usernameText;
+  });
+  roleEls.forEach((el) => {
+    el.textContent = roleText;
+  });
 }
 
 async function handleQuery() {
