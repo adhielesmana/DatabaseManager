@@ -107,8 +107,10 @@ function buildDashboardUsers() {
 
 const USERS = buildDashboardUsers();
 const staticRoot = path.join(__dirname, 'public');
-const indexTemplate = fs.readFileSync(path.join(staticRoot, 'index.html'), 'utf8');
-const renderedIndex = indexTemplate.replace(/__APP_BUILD_ID__/g, APP_BUILD_ID);
+const loginTemplate = fs.readFileSync(path.join(staticRoot, 'login.html'), 'utf8');
+const dashboardTemplate = fs.readFileSync(path.join(staticRoot, 'dashboard.html'), 'utf8');
+const renderedLogin = loginTemplate.replace(/__APP_BUILD_ID__/g, APP_BUILD_ID);
+const renderedDashboard = dashboardTemplate.replace(/__APP_BUILD_ID__/g, APP_BUILD_ID);
 const SESSION_COOKIE_NAME = 'dbmanager.sid';
 const DB_TLS_VERIFY = !['0', 'false', 'no'].includes(String(DB_SSL_VERIFY).toLowerCase());
 const importJobs = new Map();
@@ -534,8 +536,16 @@ app.get('/api/status', (req, res) => {
   res.json({ uptime: process.uptime(), ready: true });
 });
 
+app.get('/', (req, res) => {
+  res.type('html').send(renderedLogin);
+});
+
+app.get('/dashboard', requireAuth, (req, res) => {
+  res.type('html').send(renderedDashboard);
+});
+
 app.get('*', (req, res) => {
-  res.type('html').send(renderedIndex);
+  res.redirect('/');
 });
 
 if (SKIP_INTERNAL_TLS) {

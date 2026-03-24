@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Secure Database Manager · Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="styles.css?v=__APP_BUILD_ID__">
+  </head>
+  <body>
+    <div id="message" class="message" data-state="info"></div>
+    <section class="dashboard-page page">
+      <header class="top-bar">
+        <div>
+          <h1>Secure Database Manager</h1>
+          <p class="muted">Metrics, SQL imports, schema browsing, and exports under TLS.</p>
+        </div>
+        <div class="search-box">
+          <input type="text" placeholder="Search tables or recent imports...">
+        </div>
+        <div class="top-actions">
+          <button class="primary">+ New Task</button>
+          <button>Alerts</button>
+        </div>
+      </header>
+      <div class="dashboard-shell">
+        <aside class="sidebar">
+          <div>
+            <h3>overview</h3>
+            <nav>
+              <button class="active">Dashboard</button>
+              <button type="button">Analytics</button>
+              <button type="button">SQL Import</button>
+              <button type="button">Sessions</button>
+            </nav>
+          </div>
+          <div>
+            <h3>management</h3>
+            <nav>
+              <button type="button">Tables</button>
+              <button type="button">Exports</button>
+              <button type="button">Settings</button>
+            </nav>
+          </div>
+          <div class="session-card">
+            <p class="muted">Signed in as</p>
+            <p class="sidebar-user"></p>
+            <p class="sidebar-role muted"></p>
+          </div>
+        </aside>
+        <section class="workspace">
+          <div class="dashboard-grid">
+            <div class="metric-card">
+              <small>Total Revenue</small>
+              <h3>$48,295</h3>
+              <p class="muted">+12.5% vs last month</p>
+            </div>
+            <div class="metric-card">
+              <small>Active Users</small>
+              <h3>2,847</h3>
+              <p class="muted">+8.2% growth</p>
+            </div>
+            <div class="metric-card">
+              <small>Total Orders</small>
+              <h3>1,432</h3>
+              <p class="muted">-3.1% vs last month</p>
+            </div>
+            <div class="metric-card">
+              <small>Page Views</small>
+              <h3>284K</h3>
+              <p class="muted">+24.7% organic</p>
+            </div>
+          </div>
+
+          <section class="overview-panel">
+            <div class="panel-head">
+              <h2>Monthly Overview</h2>
+              <div class="panel-actions">
+                <button class="primary">Revenue</button>
+                <button>Orders</button>
+                <button>Profit</button>
+              </div>
+            </div>
+            <p class="muted">Latest import, activity, and traffic trends.</p>
+            <div class="chart-placeholder" aria-hidden="true">(Chart area)</div>
+          </section>
+
+          <section class="actions-panel">
+            <h2>Table Operations</h2>
+            <div class="data-actions">
+              <button id="export-table" class="primary">Export CSV</button>
+              <label class="import-controls">
+                <span>SQL Dump</span>
+                <input id="import-file" type="file" accept=".sql,text/plain,application/sql">
+              </label>
+              <button id="import-submit" class="primary">Import SQL</button>
+            </div>
+            <div id="import-status" class="muted">No SQL import has run yet.</div>
+          </section>
+
+          <section class="panel">
+            <h2>Tables</h2>
+            <div id="table-list"></div>
+            <div id="table-data"></div>
+          </section>
+
+          <section class="query-panel">
+            <h2>Custom SELECT</h2>
+            <p class="muted">Only SELECT statements are permitted; semicolons are stripped.</p>
+            <textarea id="custom-query" placeholder="SELECT * FROM my_table LIMIT 10"></textarea>
+            <button id="run-query" class="primary">Run query</button>
+            <div id="query-result"></div>
+          </section>
+
+          <section class="session-panel">
+            <h2>Session</h2>
+            <p class="muted">
+              Signed in as <strong id="current-user"></strong> (<span id="current-role"></span>)
+            </p>
+            <button id="logout" class="primary">Sign out</button>
+          </section>
+        </section>
+      </div>
+    </section>
+    <script src="dashboard.js?v=__APP_BUILD_ID__"></script>
+  </body>
+</html>

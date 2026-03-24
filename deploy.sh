@@ -548,11 +548,11 @@ PY
 }
 
 find_available_port() {
-  local start_port=$1
+  local start_port=${1:-}
   local service_name=${2:-}
-  local max_port=${2:-65535}
-  if [ -n "$service_name" ]; then
-    max_port=${3:-65535}
+  local max_port=${3:-65535}
+  if [ -z "$start_port" ]; then
+    return 1
   fi
   local port=$start_port
   while [ "$port" -le "$max_port" ]; do
@@ -568,6 +568,12 @@ find_available_port() {
   done
   return 1
 }
+
+
+
+
+
+
 
 nginx_paths() {
   local key=$1

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Secure Database Manager · Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="styles.css?v=__APP_BUILD_ID__" />
+  </head>
+  <body>
+    <div id="message" class="message" data-state="info"></div>
+    <main class="login-page page">
+      <div class="login-shell">
+        <section class="login-promote">
+          <h1>Zenith Database Control</h1>
+          <p>
+            Securely manage your MySQL cluster: import SQL dumps, export tables, run analytics, and keep the whole
+            workflow encrypted behind a trusted login.
+          </p>
+        </section>
+        <section class="login-panel">
+          <h2>Sign in</h2>
+          <p>Enter your admin credentials before entering the dashboard.</p>
+          <form id="login-form">
+            <label>
+              Username
+              <input type="text" id="username" name="username" required autocomplete="username" />
+            </label>
+            <label>
+              Password
+              <input type="password" id="password" name="password" required autocomplete="current-password" />
+            </label>
+            <button type="submit" class="primary">Sign in</button>
+          </form>
+          <p class="muted">Need help? Ask your infra team for the encrypted credentials file.</p>
+        </section>
+      </div>
+    </main>
+    <script src="login.js?v=__APP_BUILD_ID__"></script>
+  </body>
+</html>
